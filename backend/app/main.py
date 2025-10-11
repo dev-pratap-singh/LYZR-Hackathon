@@ -3,7 +3,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
-from app.api import routes
 from app.api.rag_routes import router as rag_router
 from app.config import settings
 from app.database import init_databases
@@ -58,7 +57,6 @@ app.add_middleware(
 )
 
 # Include routers
-app.include_router(routes.router)
 app.include_router(rag_router)
 
 

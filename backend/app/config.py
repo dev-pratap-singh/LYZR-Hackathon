@@ -33,6 +33,15 @@ class Settings(BaseSettings):
     # Storage
     storage_path: str = "/app/storage"
 
+    # GraphRAG Settings
+    graphrag_enabled: bool = True
+    graphrag_llm_model: str = "gpt-4o-mini"
+    graphrag_embedding_model: str = "text-embedding-3-small"
+
+    # Entity Resolution
+    entity_similarity_threshold: float = 0.85
+    enable_entity_deduplication: bool = True
+
     @property
     def postgres_url(self) -> str:
         return f"postgresql://{self.postgres_user}:{self.postgres_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
@@ -40,6 +49,18 @@ class Settings(BaseSettings):
     @property
     def pgvector_url(self) -> str:
         return f"postgresql://{self.postgres_user}:{self.postgres_password}@{self.pgvector_host}:{self.pgvector_port}/{self.pgvector_db}"
+
+    @property
+    def neo4j_uri(self) -> str:
+        return f"bolt://{self.neo4j_host}:{self.neo4j_port}"
+
+    @property
+    def neo4j_username(self) -> str:
+        return self.neo4j_auth.split('/')[0]
+
+    @property
+    def neo4j_password(self) -> str:
+        return self.neo4j_auth.split('/')[1]
 
     class Config:
         env_file = ".env"

@@ -322,6 +322,54 @@ body {
   border: 1px solid #e0e0e0;
 }
 
+/* Formatted Answer Styling */
+.formatted-answer {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.answer-section,
+.reasoning-section {
+  padding: 16px;
+  border-radius: 8px;
+  background: #f8f9fa;
+  border-left: 4px solid #28a745;
+}
+
+.reasoning-section {
+  border-left-color: #667eea;
+  background: #f3f4ff;
+}
+
+.section-label {
+  font-weight: 700;
+  font-size: 1.05em;
+  color: #333;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid rgba(0, 0, 0, 0.1);
+}
+
+.answer-section .section-label {
+  color: #28a745;
+}
+
+.reasoning-section .section-label {
+  color: #667eea;
+}
+
+.section-content {
+  line-height: 1.8;
+  color: #444;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-size: 0.98em;
+}
+
 /* Input Form */
 .input-form {
   display: flex;

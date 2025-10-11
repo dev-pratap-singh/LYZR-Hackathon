@@ -32,6 +32,12 @@ class Document(Base):
     text_filepath = Column(String(512), nullable=True)  # Path to extracted .txt file
     total_chunks = Column(Integer, default=0)
 
+    # Graph Processing (GraphRAG)
+    graph_processed = Column(Boolean, default=False)
+    graph_entities_count = Column(Integer, default=0)
+    graph_relationships_count = Column(Integer, default=0)
+    graph_processing_time = Column(Integer, nullable=True)  # In seconds
+
     # Metadata
     user_id = Column(String(100), default="default_user")
     doc_metadata = Column(JSON, default={})

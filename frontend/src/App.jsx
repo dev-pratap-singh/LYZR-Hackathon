@@ -244,6 +244,34 @@ function App() {
     return icons[type] || '📌';
   };
 
+  const formatAnswer = (content) => {
+    // Check if content contains both "Answer:" and "Reasoning:" sections
+    const answerMatch = content.match(/\*\*Answer:\*\*(.*?)(\*\*Reasoning:\*\*|$)/s);
+    const reasoningMatch = content.match(/\*\*Reasoning:\*\*(.*?)$/s);
+
+    if (answerMatch || reasoningMatch) {
+      return (
+        <div className="formatted-answer">
+          {answerMatch && (
+            <div className="answer-section">
+              <div className="section-label">💡 Answer</div>
+              <div className="section-content">{answerMatch[1].trim()}</div>
+            </div>
+          )}
+          {reasoningMatch && (
+            <div className="reasoning-section">
+              <div className="section-label">🧠 Reasoning</div>
+              <div className="section-content">{reasoningMatch[1].trim()}</div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // If no structured format, return as-is
+    return content;
+  };
+
   return (
     <div className="app-container">
       <header className="header">
@@ -339,7 +367,9 @@ function App() {
                     <div className="message-avatar">
                       {msg.role === 'user' ? '👤' : '🤖'}
                     </div>
-                    <div className="message-content">{msg.content}</div>
+                    <div className="message-content">
+                      {msg.role === 'assistant' ? formatAnswer(msg.content) : msg.content}
+                    </div>
                   </div>
                 ))}
                 <div ref={messagesEndRef} />
