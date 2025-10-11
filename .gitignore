@@ -1,1 +1,44 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build
+build/
+dist/
+
+# Storage
+storage/*
+!storage/.gitkeep
+
+# Logs
+*.log
+logs/
+
+# Sample files
 /agentic-rag-system-sample-files
+
+# prmpt files
+prompts/
