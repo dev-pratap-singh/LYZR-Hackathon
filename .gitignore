@@ -38,7 +38,7 @@ storage/*
 logs/
 
 # Sample files
-/agentic-rag-system-sample-files
+/graphrag-sample-files
 
 # prmpt files
 prompts/

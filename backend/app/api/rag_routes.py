@@ -3,20 +3,22 @@ RAG System API Routes
 Handles document upload, query processing, and streaming responses
 """
 import logging
+import os
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, List, Literal
-from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from app.database import get_postgres_session, get_pgvector_session
-from app.models import Document, Embedding
+from app.database import get_postgres_session
+from app.models import Document
 from app.services.search_agent import SearchAgent
 from app.services.vector_store import VectorStoreService
 from app.services.document_processor import DocumentProcessingService
 from app.services.bm25_search import BM25SearchService
+from app.services.neo4j_service import neo4j_service
+from app.services.graphrag_pipeline import GraphRAGPipeline
 from app.utils.document_helpers import process_document_pipeline
 
 logger = logging.getLogger(__name__)
@@ -281,7 +283,6 @@ async def delete_document(
         await bm25_service.delete_index(str(document.id))
 
         # Delete files
-        import os
         if os.path.exists(document.filepath):
             os.remove(document.filepath)
         if document.text_filepath and os.path.exists(document.text_filepath):
@@ -300,4 +301,196 @@ async def delete_document(
         raise
     except Exception as e:
         logger.error(f"Error deleting document: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==== Graph Processing Endpoints ====
+@router.post("/documents/{document_id}/process-graph")
+async def process_document_graph(
+    document_id: str,
+    db: Session = Depends(get_postgres_session)
+):
+    """
+    Process document with GraphRAG to extract knowledge graph
+
+    Args:
+        document_id: Document ID to process
+        db: Database session
+
+    Returns:
+        Graph processing status and statistics
+    """
+    try:
+        document = db.query(Document).filter(Document.id == document_id).first()
+
+        if not document:
+            raise HTTPException(status_code=404, detail="Document not found")
+
+        if not document.is_processed or not document.text_filepath:
+            raise HTTPException(
+                status_code=400,
+                detail="Document must be processed first (text extraction required)"
+            )
+
+        logger.info(f"Starting GraphRAG processing for document {document_id}")
+
+        # Read extracted text
+        with open(document.text_filepath, 'r', encoding='utf-8') as f:
+            text_content = f.read()
+
+        # Initialize GraphRAG pipeline for this request
+        graphrag_pipeline = GraphRAGPipeline()
+
+        # Process with GraphRAG (chunks text and extracts entities/relationships from each chunk)
+        graph_result = await graphrag_pipeline.process_document(
+            text_content=text_content,
+            document_id=str(document_id)
+        )
+
+        # Import all graph documents into Neo4j (one per chunk)
+        await neo4j_service.create_constraints()
+        await neo4j_service.import_graph_documents(
+            graph_documents=graph_result["graph_documents"],  # Now a list of all chunk graph docs
+            document_id=str(document_id)
+        )
+
+        # Update document record with stats
+        document.graph_processed = True
+        document.graph_entities_count = graph_result["entities_count"]
+        document.graph_relationships_count = graph_result["relationships_count"]
+        document.graph_processing_time = graph_result["processing_time"]
+        db.commit()
+
+        logger.info(
+            f"GraphRAG processing complete for {document_id}: "
+            f"{graph_result['entities_count']} entities, "
+            f"{graph_result['relationships_count']} relationships "
+            f"from {graph_result['chunks_processed']} chunks"
+        )
+
+        return {
+            "success": True,
+            "document_id": str(document_id),
+            "graph_processed": True,
+            "entities_count": graph_result["entities_count"],
+            "relationships_count": graph_result["relationships_count"],
+            "chunks_processed": graph_result["chunks_processed"],
+            "processing_time": graph_result["processing_time"],
+            "message": f"Knowledge graph extracted from {graph_result['chunks_processed']} chunks and stored successfully"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error processing graph for document {document_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/graph/stats/{document_id}")
+async def get_graph_stats(
+    document_id: str,
+    db: Session = Depends(get_postgres_session)
+):
+    """Get graph statistics for a document"""
+    try:
+        document = db.query(Document).filter(Document.id == document_id).first()
+
+        if not document:
+            raise HTTPException(status_code=404, detail="Document not found")
+
+        # Get stats from Neo4j
+        graph_stats = await neo4j_service.get_document_stats(document_id)
+
+        return {
+            "document_id": document_id,
+            "graph_processed": document.graph_processed,
+            "entities_count": document.graph_entities_count,
+            "relationships_count": document.graph_relationships_count,
+            "processing_time": document.graph_processing_time,
+            "neo4j_stats": graph_stats
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting graph stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/graph/entities")
+async def get_entities(
+    document_id: Optional[str] = None,
+    limit: int = 50
+):
+    """Get list of entities from the knowledge graph"""
+    try:
+        cypher = """
+        MATCH (e:__Entity__)
+        """
+
+        if document_id:
+            cypher += """
+            WHERE (e)-[:BELONGS_TO]->(:__Document__ {id: $document_id})
+            """
+
+        cypher += """
+        RETURN e.id as id,
+               e.type as type,
+               e.description as description
+        LIMIT $limit
+        """
+
+        params = {"limit": limit}
+        if document_id:
+            params["document_id"] = document_id
+
+        entities = await neo4j_service.query_graph(cypher, params)
+
+        return {
+            "entities": entities,
+            "count": len(entities)
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting entities: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/graph/relationships")
+async def get_relationships(
+    document_id: Optional[str] = None,
+    limit: int = 50
+):
+    """Get list of relationships from the knowledge graph"""
+    try:
+        cypher = """
+        MATCH (e1:__Entity__)-[r]->(e2:__Entity__)
+        WHERE NOT type(r) = 'BELONGS_TO'
+        """
+
+        if document_id:
+            cypher += """
+            AND (e1)-[:BELONGS_TO]->(:__Document__ {id: $document_id})
+            """
+
+        cypher += """
+        RETURN e1.id as source,
+               type(r) as type,
+               e2.id as target
+        LIMIT $limit
+        """
+
+        params = {"limit": limit}
+        if document_id:
+            params["document_id"] = document_id
+
+        relationships = await neo4j_service.query_graph(cypher, params)
+
+        return {
+            "relationships": relationships,
+            "count": len(relationships)
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting relationships: {e}")
         raise HTTPException(status_code=500, detail=str(e))
