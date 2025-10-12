@@ -16,6 +16,7 @@ from app.services.bm25_search import BM25SearchService
 from app.services.graphrag_pipeline import GraphRAGPipeline
 from app.services.neo4j_service import neo4j_service
 from app.services.elasticsearch_service import elasticsearch_service
+from app.services.graph_refinement_pipeline import GraphRefinementPipeline
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -133,6 +134,34 @@ async def process_document_pipeline(
                     document_id=str(document.id)
                 )
                 logger.info("✓ Graph imported to Neo4j")
+
+                # ====== Entity Deduplication & Graph Refinement (if enabled) ======
+                if settings.enable_entity_deduplication:
+                    try:
+                        logger.info(f"🔧 Starting entity deduplication for document {document.id}...")
+
+                        # Initialize graph refinement pipeline
+                        refinement_pipeline = GraphRefinementPipeline()
+
+                        # Run graph refinement (entity deduplication, enhancement)
+                        refinement_stats = await refinement_pipeline.refine_graph(
+                            document_id=str(document.id)
+                        )
+
+                        logger.info(f"✓ Entity deduplication complete:")
+                        logger.info(f"   - Entities processed: {refinement_stats['entities_processed']}")
+                        logger.info(f"   - Duplicates merged: {refinement_stats['auto_merged']}")
+                        logger.info(f"   - Suggested merges: {refinement_stats['suggested_merges']}")
+                        logger.info(f"   - Time: {refinement_stats['total_time_seconds']:.2f}s")
+
+                        # Close the refinement pipeline connection
+                        refinement_pipeline.close()
+
+                    except Exception as refinement_error:
+                        # Log error but don't fail the entire pipeline
+                        logger.error(f"⚠️ Entity deduplication failed (graph still available): {refinement_error}")
+                else:
+                    logger.info("ℹ️ Entity deduplication disabled (ENABLE_ENTITY_DEDUPLICATION=false)")
 
                 # Update document with graph statistics
                 document.graph_processed = True

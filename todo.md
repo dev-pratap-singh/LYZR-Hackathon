@@ -16,6 +16,11 @@ PDF-2-Images -> Use a Late Interaction Model (Ex: ) + Multi Vector Embeddings ->
 6. Use open source alternative to build and maintain graphs like Cognee to build graphs, Graphiti to keep graphs updated, etc.
 7. I've been testing the system with only 1 document need to stress test with 100+ documents to see how the graph evolves with time. Need to improve the graph evolving and re-organizing strategy as well.
 8. Ideally the passwords etc are retrieved at run-time from a password manager, but for testing keeping them hard-coded for now.
+9. My ragas scores aren't very good, as I'm not using very inexpensive models like:
+    openai_model: str = "gpt-4o-mini"
+    openai_embedding_model: str = "text-embedding-3-small"
+    using better models might improve the scores but further evaluations are needed.
+10. Allow user to improve graph using natural language. UI in place, functionality to add.
 
 
 Hi, big fan!
