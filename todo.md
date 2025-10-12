@@ -15,6 +15,7 @@ PDF-2-Images -> Use a Late Interaction Model (Ex: ) + Multi Vector Embeddings ->
 5. Presently I'm using LLMGraphTransformer from langchain_experimental.graph_transformers to build the graph using all the node types and all the relationship types but a better Top-Down approach would be to let the use to upload his/her own Ontology as the LLMs can very creative, having a domain specific Ontology will help improve the graph to a large extend. 
 6. Use open source alternative to build and maintain graphs like Cognee to build graphs, Graphiti to keep graphs updated, etc.
 7. I've been testing the system with only 1 document need to stress test with 100+ documents to see how the graph evolves with time. Need to improve the graph evolving and re-organizing strategy as well.
+8. Ideally the passwords etc are retrieved at run-time from a password manager, but for testing keeping them hard-coded for now.
 
 
 Hi, big fan!
