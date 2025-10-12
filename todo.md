@@ -12,3 +12,9 @@ The setup could be improved upon further investigations like
 Architecture:
 PDF-2-Images -> Use a Late Interaction Model (Ex: ) + Multi Vector Embeddings -> Store it in a image-vector-embeddings friendly DB like Qdrant Vector DB -> Do retrieval (ViDoRe retrievel + Maxsum similarity btw the question embeddings & the image embeddings) -> Send the pages to Multi-Model LLM to answer the questions.
 4. For a big document, the graph creation takes a lot of time, we could speed it up by parallel processing. We can use asyncio with semaphore to process them parallely.
+5. Presently I'm using LLMGraphTransformer from langchain_experimental.graph_transformers to build the graph using all the node types and all the relationship types but a better Top-Down approach would be to let the use to upload his/her own Ontology as the LLMs can very creative, having a domain specific Ontology will help improve the graph to a large extend. 
+6. Use open source alternative to build and maintain graphs like Cognee to build graphs, Graphiti to keep graphs updated, etc.
+
+
+Hi, big fan!
+Even if I don't win the Hackathon! Would love to meet the team in Bangalore for a coffee. ✌️

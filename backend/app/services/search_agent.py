@@ -22,6 +22,8 @@ from app.services.vector_store import VectorStoreService
 from app.services.bm25_search import BM25SearchService
 from app.services.reranker import RerankerService
 from app.services.graph_search import graph_search_service
+from app.services.graphrag_pipeline import GraphRAGPipeline
+from app.services.neo4j_service import neo4j_service
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +85,7 @@ class EnhancedStreamingCallback(AsyncCallbackHandler):
             f"✅ **{self.current_tool}** completed\n📊 Retrieved {len(output)} chars of context",
             {
                 "tool_name": self.current_tool,
-                "output_preview": output[:300] + "..." if len(output) > 300 else output,
+                "output_preview": output,  # Send complete output
                 "output_length": len(output)
             }
         )
@@ -150,7 +152,84 @@ class SearchAgent:
         self.agent_executor = None
         self.tools = []
 
+        # GraphRAG pipeline for processing documents
+        self.graphrag_pipeline = GraphRAGPipeline()
+        self.graph_processing_started = False
+
         logger.info("Multi-Tool Search Agent initialized")
+
+    async def ensure_graph_processed(self, db_session):
+        """
+        Ensure all documents with text_filepath have been processed for the knowledge graph.
+        This is called once per agent lifecycle on first query.
+
+        Args:
+            db_session: SQLAlchemy database session
+        """
+        if self.graph_processing_started:
+            return
+
+        self.graph_processing_started = True
+
+        try:
+            # Import here to avoid circular dependency
+            from app.models import Document
+
+            # Find all documents that have been processed but not graph-processed
+            documents = db_session.query(Document).filter(
+                Document.is_processed == True,
+                Document.text_filepath != None,
+                Document.graph_processed == False
+            ).all()
+
+            if not documents:
+                logger.info("No documents need graph processing")
+                return
+
+            logger.info(f"Found {len(documents)} documents to process for knowledge graph")
+
+            for document in documents:
+                try:
+                    logger.info(f"Processing knowledge graph for document {document.id}")
+
+                    # Read extracted text
+                    with open(document.text_filepath, 'r', encoding='utf-8') as f:
+                        text_content = f.read()
+
+                    # Process with GraphRAG using actual document ID
+                    graph_result = await self.graphrag_pipeline.process_document(
+                        text_content=text_content,
+                        document_id=str(document.id)
+                    )
+
+                    # Import graph documents into Neo4j with actual document ID
+                    await neo4j_service.create_constraints()
+                    await neo4j_service.import_graph_documents(
+                        graph_documents=graph_result["graph_documents"],
+                        document_id=str(document.id)
+                    )
+
+                    # Update document record
+                    document.graph_processed = True
+                    document.graph_entities_count = graph_result["entities_count"]
+                    document.graph_relationships_count = graph_result["relationships_count"]
+                    db_session.commit()
+
+                    logger.info(
+                        f"Graph processed for {document.id}: "
+                        f"{graph_result['entities_count']} entities, "
+                        f"{graph_result['relationships_count']} relationships"
+                    )
+
+                except Exception as e:
+                    logger.error(f"Error processing graph for document {document.id}: {e}")
+                    db_session.rollback()
+                    continue
+
+            logger.info("Graph processing complete for all documents")
+
+        except Exception as e:
+            logger.error(f"Error in ensure_graph_processed: {e}")
 
     async def vector_search_sync(self, query: str) -> str:
         """

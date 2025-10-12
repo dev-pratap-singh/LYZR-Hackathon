@@ -218,6 +218,25 @@ class Neo4jService:
             logger.error(f"Error deleting document graph: {e}")
             raise
 
+    async def clear_all_graph_data(self):
+        """Clear all graph data from Neo4j - useful for starting fresh"""
+        try:
+            logger.info("Clearing all graph data from Neo4j")
+
+            # Delete all entities, relationships, and document nodes
+            self.graph.query(
+                """
+                MATCH (n)
+                DETACH DELETE n
+                """
+            )
+
+            logger.info("All graph data cleared successfully")
+
+        except Exception as e:
+            logger.error(f"Error clearing all graph data: {e}")
+            raise
+
     async def get_document_stats(self, document_id: str) -> Dict[str, Any]:
         """Get statistics for a document's graph"""
         try:
