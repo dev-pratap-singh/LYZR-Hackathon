@@ -8,48 +8,53 @@ on:
 
 jobs:
   test:
-    name: Run Unit Tests
+    name: Run Unit Tests in Docker
     runs-on: ubuntu-latest
+    container:
+      image: python:3.12-slim
+      options: --user root
 
     steps:
       # Checkout the code
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Set up Python
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: 'pip'
-
-      # Install system dependencies
+      # Install system dependencies in container
       - name: Install system dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y postgresql-client libpq-dev
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            gcc \
+            g++ \
+            libpq-dev \
+            git
+          rm -rf /var/lib/apt/lists/*
 
-      # Install backend dependencies
-      - name: Install backend dependencies
+      # Create virtual environment and install dependencies
+      - name: Install Python dependencies
         run: |
+          python -m venv venv
+          . venv/bin/activate
           python -m pip install --upgrade pip
           pip install -r backend/requirements.txt
-
-      # Install test dependencies
-      - name: Install test dependencies
-        run: |
           pip install -r test/requirements.txt
 
       # Run unit tests with coverage
-      - name: Run unit tests
+      - name: Run unit tests with coverage
         run: |
+          . venv/bin/activate
           pytest test/unit_tests/ \
             --cov=backend/app \
             --cov-report=term-missing \
             --cov-report=xml:coverage.xml \
             --cov-report=html:test_coverage_report \
             --junitxml=test-results.xml \
-            -v
+            -v | tee test_output.log
+
+          # Extract coverage percentage
+          COVERAGE=$(grep "TOTAL" test_output.log | awk '{print $NF}')
+          echo "📊 Code Coverage: $COVERAGE"
+          echo "COVERAGE_PERCENT=$COVERAGE" >> $GITHUB_ENV
 
       # Upload coverage to Codecov (optional)
       - name: Upload coverage to Codecov
@@ -88,17 +93,15 @@ jobs:
           echo "Check the test results and coverage report in the artifacts"
 
   lint:
-    name: Code Quality Checks
+    name: Code Quality Checks in Docker
     runs-on: ubuntu-latest
+    container:
+      image: python:3.12-slim
+      options: --user root
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
 
       - name: Install linting tools
         run: |
@@ -132,12 +135,19 @@ jobs:
     steps:
       - name: Check test status
         run: |
-          echo "Unit Tests: ${{ needs.test.result }}"
-          echo "Code Quality: ${{ needs.lint.result }}"
+          echo "════════════════════════════════════════"
+          echo "           CI Pipeline Summary           "
+          echo "════════════════════════════════════════"
+          echo ""
+          echo "Unit Tests:      ${{ needs.test.result }}"
+          echo "Code Quality:    ${{ needs.lint.result }}"
+          echo ""
+          echo "════════════════════════════════════════"
 
           if [ "${{ needs.test.result }}" != "success" ]; then
-            echo "⚠️ Unit tests failed or were skipped"
+            echo "❌ Unit tests failed or were skipped"
             exit 1
           fi
 
           echo "✅ All checks passed!"
+          echo "🎉 Ready to merge!"

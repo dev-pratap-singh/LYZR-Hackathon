@@ -42,3 +42,13 @@ logs/
 
 # prmpt files
 prompts/
+
+# Testing / Coverage
+.coverage
+.coverage.*
+coverage.xml
+test_coverage.json
+test_coverage_report/
+htmlcov/
+.pytest_cache/
+test-results.xml
