@@ -20,6 +20,7 @@ PDF-2-Images -> Use a Late Interaction Model (Ex: ) + Multi Vector Embeddings ->
     openai_model: str = "gpt-4o-mini"
     openai_embedding_model: str = "text-embedding-3-small"
     using better models might improve the scores but further evaluations are needed.
+10. Allow user to improve graph using natural language. UI in place, functionality to add.
 
 
 Hi, big fan!
