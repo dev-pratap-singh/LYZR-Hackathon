@@ -793,3 +793,250 @@ frontend/
 **Last Updated**: 2025-10-12
 **Status**: ✅ Production Ready
 **Version**: 1.0.0
+
+---
+
+## Entity Deduplication Feature
+
+### Overview
+
+This feature adds intelligent entity deduplication to the GraphRAG pipeline using BFS (Breadth-First Search) traversal and multiple similarity metrics.
+
+### How It Works
+
+#### Architecture
+
+The entity deduplication pipeline runs automatically after GraphRAG processes a document and imports entities into Neo4j:
+
+```
+Document Upload → Text Extraction → GraphRAG Processing → Neo4j Import → Entity Deduplication
+```
+
+#### Key Components
+
+1. **Graph Refinement Pipeline** (`backend/app/services/graph_refinement_pipeline.py`)
+   - BFS-based entity traversal
+   - Multi-metric similarity calculation
+   - Automatic entity merging
+   - Context preservation
+
+2. **Similarity Metrics**
+   - **String Similarity**: Uses Levenshtein distance for name matching
+   - **Semantic Similarity**: Uses sentence transformers for description matching
+   - **Contextual Similarity**: Analyzes shared relationships in the graph
+   - **Type Matching**: Ensures entities are of the same type
+
+3. **Merge Strategy**
+   - **Auto-merge** (≥95% similarity): Automatically merges entities
+   - **Suggest merge** (≥85% similarity): Logs for manual review
+   - **Ignore** (<75% similarity): Skips potential duplicates
+
+### Configuration
+
+#### Environment Variables
+
+The feature is controlled via the `.env` file:
+
+```env
+# Entity Resolution & Deduplication
+ENABLE_ENTITY_DEDUPLICATION=true
+ENTITY_SIMILARITY_THRESHOLD=0.85
+```
+
+#### Configuration Options
+
+All configuration is handled in `backend/app/config.py`:
+
+- `enable_entity_deduplication` (bool): Enable/disable the feature
+- `entity_similarity_threshold` (float): Threshold for auto-merging (default: 0.85)
+
+#### Advanced Configuration
+
+You can customize the behavior by modifying `GraphRefinementConfig` in the pipeline:
+
+```python
+class GraphRefinementConfig(BaseModel):
+    # Feature flags
+    enable_deduplication: bool = True
+    enable_entity_enhancement: bool = True
+
+    # Similarity thresholds
+    auto_merge_threshold: float = 0.95  # Auto-merge above this
+    suggest_merge_threshold: float = 0.85  # Suggest to user
+    min_similarity_threshold: float = 0.75  # Ignore below this
+
+    # BFS configuration
+    bfs_max_depth: int = 3  # How deep to traverse
+    bfs_batch_size: int = 100  # Process in batches
+
+    # Performance
+    max_nodes_to_process: int = 10000
+    use_embeddings: bool = True
+    cache_embeddings: bool = True
+```
+
+### Usage
+
+#### Automatic Processing
+
+Entity deduplication runs automatically when you upload a document if `ENABLE_ENTITY_DEDUPLICATION=true`:
+
+```bash
+# Upload a document via API
+curl -X POST http://localhost:8000/api/rag/upload \
+  -F "file=@document.pdf" \
+  -F "method=pymupdf"
+```
+
+The pipeline will:
+1. Extract text from PDF
+2. Process with GraphRAG
+3. Import entities and relationships to Neo4j
+4. **Automatically deduplicate entities**
+5. Store refined graph
+
+#### Disabling the Feature
+
+To disable entity deduplication:
+
+```env
+# .env
+ENABLE_ENTITY_DEDUPLICATION=false
+```
+
+### How Entity Merging Works
+
+#### Merge Process
+
+1. **Identify Similar Entities**: BFS traversal finds potential duplicates
+2. **Calculate Similarity**: Multi-metric scoring system
+3. **Merge Decision**: Based on similarity thresholds
+4. **Property Merging**: Combines descriptions and metadata
+5. **Relationship Transfer**: Moves all relationships to merged entity
+6. **Cleanup**: Removes duplicate entity
+
+#### Example
+
+**Before Deduplication:**
+```
+Entity A: "Machine Learning"
+  - description: "A subset of AI"
+  - relationships: 3
+
+Entity B: "Machine learning"
+  - description: "AI technique for pattern recognition"
+  - relationships: 5
+```
+
+**After Deduplication:**
+```
+Entity A: "Machine Learning"
+  - description: "A subset of AI. AI technique for pattern recognition"
+  - relationships: 8 (combined)
+  - merged_from: ["Machine learning"]
+  - merge_confidence: 0.97
+```
+
+### Dependencies
+
+The following packages are required (already added to `requirements.txt`):
+
+```txt
+sentence-transformers==3.3.1
+python-Levenshtein==0.25.1
+numpy==1.26.4
+neo4j==5.26.0
+```
+
+Install them with:
+
+```bash
+pip install -r backend/requirements.txt
+```
+
+### Logging
+
+The feature provides detailed logging during processing:
+
+```
+🔧 Starting entity deduplication for document abc-123...
+🔄 Starting BFS deduplication scan...
+   Found 150 entities to process
+   ✅ Auto-merged: Entity_A + Entity_B (score: 0.97)
+   ⚠️  Suggest merge: Entity_C + Entity_D (score: 0.88)
+✓ Entity deduplication complete:
+   - Entities processed: 150
+   - Duplicates merged: 12
+   - Suggested merges: 3
+   - Time: 8.45s
+```
+
+### Performance Considerations
+
+#### BFS Parameters
+
+- **bfs_max_depth**: Controls how far to traverse (default: 3)
+  - Lower = faster but may miss duplicates
+  - Higher = more thorough but slower
+
+- **bfs_batch_size**: Number of duplicates to process at once (default: 100)
+  - Balances memory usage and processing speed
+
+#### Optimization Tips
+
+1. **Disable entity enhancement** if not needed:
+   ```python
+   enable_entity_enhancement: bool = False
+   ```
+
+2. **Adjust BFS depth** for large graphs:
+   ```python
+   bfs_max_depth: int = 2  # Faster, less thorough
+   ```
+
+3. **Use caching** for embeddings:
+   ```python
+   cache_embeddings: bool = True
+   ```
+
+### Troubleshooting Entity Deduplication
+
+#### Common Issues
+
+1. **Slow processing**
+   - Reduce `bfs_max_depth`
+   - Increase `min_similarity_threshold`
+   - Disable `enable_entity_enhancement`
+
+2. **Too many merges**
+   - Increase `auto_merge_threshold`
+   - Adjust weights in similarity calculation
+
+3. **Too few merges**
+   - Lower `auto_merge_threshold`
+   - Check if entities have descriptions
+
+#### Debugging
+
+Enable debug logging in your application:
+
+```python
+import logging
+logging.getLogger('app.services.graph_refinement_pipeline').setLevel(logging.DEBUG)
+```
+
+### Future Enhancements
+
+Potential improvements:
+
+1. **Cross-document linking**: Connect entities across multiple documents
+2. **Manual merge review**: UI for reviewing suggested merges
+3. **Undo functionality**: Ability to reverse merges
+4. **Custom similarity metrics**: Domain-specific scoring
+5. **Bulk operations**: Process all documents at once
+
+### References
+
+- Original implementation: `sample-files/entity_de_duplication.py`
+- Integration point: `backend/app/utils/document_helpers.py:138-164`
+- Pipeline implementation: `backend/app/services/graph_refinement_pipeline.py`
