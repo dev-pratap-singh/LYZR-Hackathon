@@ -26,6 +26,27 @@ sys.modules['rank_bm25'] = MagicMock()
 sys.modules['sentence_transformers'] = MagicMock()
 sys.modules['networkx'] = MagicMock()
 sys.modules['graphdatascience'] = MagicMock()
+
+# Mock OpenAI - CRITICAL: Prevent any external API calls
+mock_openai = MagicMock()
+mock_openai.OpenAI = MagicMock()
+mock_openai.AsyncOpenAI = MagicMock()
+sys.modules['openai'] = mock_openai
+sys.modules['openai.types'] = MagicMock()
+sys.modules['openai.types.chat'] = MagicMock()
+
+# Mock LangChain modules - prevent external calls
+mock_langchain = MagicMock()
+mock_langchain.text_splitter = MagicMock()
+mock_langchain.text_splitter.RecursiveCharacterTextSplitter = MagicMock()
+sys.modules['langchain'] = mock_langchain
+sys.modules['langchain.text_splitter'] = mock_langchain.text_splitter
+sys.modules['langchain.agents'] = MagicMock()
+sys.modules['langchain.tools'] = MagicMock()
+sys.modules['langchain.prompts'] = MagicMock()
+sys.modules['langchain.callbacks'] = MagicMock()
+sys.modules['langchain.callbacks.base'] = MagicMock()
+sys.modules['langchain.schema'] = MagicMock()
 sys.modules['langchain_openai'] = MagicMock()
 sys.modules['langchain_experimental'] = MagicMock()
 sys.modules['langchain_experimental.graph_transformers'] = MagicMock()

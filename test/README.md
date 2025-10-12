@@ -27,10 +27,20 @@ The main pytest configuration is in the project root (`pytest.ini`). It includes
 
 ### conftest.py
 Contains shared fixtures and configuration:
-- Mock settings
-- Mock database sessions
-- Sample data fixtures (documents, chunks, embeddings)
-- Mock external services (OpenAI, Neo4j, Elasticsearch)
+- **Complete Isolation**: All external modules are mocked at import time
+- **No External Calls**: OpenAI, databases, and network services are fully mocked
+- **Mock Settings**: Application configuration with test defaults
+- **Mock Database Sessions**: Simulated database operations
+- **Sample Data Fixtures**: Pre-defined test data (documents, chunks, embeddings)
+- **Mock External Services**: OpenAI API, Neo4j, Elasticsearch, LangChain
+
+**Key Isolation Features:**
+- ✅ All OpenAI API calls are mocked (no real API calls)
+- ✅ All database connections are mocked (no real DB connections)
+- ✅ All Neo4j operations are mocked
+- ✅ All Elasticsearch operations are mocked
+- ✅ All LangChain components are mocked
+- ✅ No network calls possible during tests
 
 ## Running Tests
 

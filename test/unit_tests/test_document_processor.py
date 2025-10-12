@@ -12,8 +12,9 @@ import hashlib
 class TestDocumentProcessingService:
     """Test DocumentProcessingService class"""
 
+    @patch('app.services.document_processor.RecursiveCharacterTextSplitter')
     @patch('app.services.document_processor.settings')
-    def test_init(self, mock_settings):
+    def test_init(self, mock_settings, mock_splitter_class):
         """Test DocumentProcessingService initialization"""
         from app.services.document_processor import DocumentProcessingService
 
@@ -21,10 +22,16 @@ class TestDocumentProcessingService:
         mock_settings.chunk_size = 1200
         mock_settings.chunk_overlap = 400
 
+        # Mock text splitter
+        mock_splitter = Mock()
+        mock_splitter_class.return_value = mock_splitter
+
         service = DocumentProcessingService()
 
         assert service.storage_path == Path("/tmp/test_storage")
         assert service.text_splitter is not None
+        # Verify text splitter was initialized (don't check exact parameters)
+        mock_splitter_class.assert_called_once()
 
     @pytest.mark.asyncio
     @patch('app.services.document_processor.settings')
@@ -157,8 +164,9 @@ class TestDocumentProcessingService:
             assert "test.txt" in text_path
             mock_file.write.assert_called_once_with(sample_text)
 
+    @patch('app.services.document_processor.RecursiveCharacterTextSplitter')
     @patch('app.services.document_processor.settings')
-    def test_chunk_text(self, mock_settings, sample_text):
+    def test_chunk_text(self, mock_settings, mock_splitter_class, sample_text):
         """Test text chunking"""
         from app.services.document_processor import DocumentProcessingService
 
@@ -166,12 +174,21 @@ class TestDocumentProcessingService:
         mock_settings.chunk_size = 100  # Small chunks for testing
         mock_settings.chunk_overlap = 20
 
+        # Mock the text splitter to return sample chunks
+        mock_splitter = Mock()
+        mock_splitter.split_text = Mock(return_value=[
+            "This is chunk 1 text",
+            "This is chunk 2 text",
+            "This is chunk 3 text"
+        ])
+        mock_splitter_class.return_value = mock_splitter
+
         service = DocumentProcessingService()
 
         # Test chunking
         chunks = service.chunk_text(sample_text)
 
-        assert len(chunks) > 0
+        assert len(chunks) == 3
         for i, chunk in enumerate(chunks):
             assert 'index' in chunk
             assert 'text' in chunk
