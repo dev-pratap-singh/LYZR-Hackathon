@@ -145,6 +145,9 @@ async def query_stream(
     - Streams LLM response with reasoning
     """
     try:
+        # Ensure graph is processed for all documents (happens once on first query)
+        await search_agent.ensure_graph_processed(db)
+
         # If document_id provided, verify it exists and process if needed
         document_id = None
         if request.document_id:
@@ -281,6 +284,13 @@ async def delete_document(
 
         # Delete BM25 index
         await bm25_service.delete_index(str(document.id))
+
+        # Delete graph data from Neo4j
+        try:
+            await neo4j_service.delete_document_graph(str(document.id))
+            logger.info(f"Graph data deleted for document {document.id}")
+        except Exception as e:
+            logger.warning(f"Failed to delete graph data: {e}")
 
         # Delete files
         if os.path.exists(document.filepath):
@@ -493,4 +503,195 @@ async def get_relationships(
 
     except Exception as e:
         logger.error(f"Error getting relationships: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/graph/data")
+async def get_graph_data(
+    limit: int = 100
+):
+    """
+    Get complete graph data (nodes and edges) for visualization
+    Returns unified knowledge graph across all documents
+
+    Args:
+        limit: Maximum number of nodes to return
+
+    Returns:
+        Graph data in D3.js compatible format with nodes and edges
+    """
+    try:
+        # Query to get entities (nodes) with their properties from ALL documents
+        nodes_cypher = """
+        MATCH (e:__Entity__)-[:BELONGS_TO]->(d:__Document__)
+        RETURN e.id as id,
+               e.id as label,
+               labels(e) as types,
+               e.description as description,
+               properties(e) as properties
+        LIMIT $limit
+        """
+
+        nodes_result = await neo4j_service.query_graph(
+            nodes_cypher,
+            {"limit": limit}
+        )
+
+        # Format nodes for D3.js
+        nodes = []
+        for node in nodes_result:
+            # Get the entity type (first non-system label)
+            entity_types = [t for t in node.get('types', []) if not t.startswith('__')]
+            entity_type = entity_types[0] if entity_types else "Entity"
+
+            nodes.append({
+                "id": node['id'],
+                "label": node['id'],
+                "type": entity_type,
+                "description": node.get('description', ''),
+                "properties": node.get('properties', {})
+            })
+
+        # Query to get relationships (edges) across ALL documents
+        edges_cypher = """
+        MATCH (e1:__Entity__)-[:BELONGS_TO]->(d1:__Document__)
+        MATCH (e1)-[r]->(e2:__Entity__)-[:BELONGS_TO]->(d2:__Document__)
+        WHERE NOT type(r) = 'BELONGS_TO'
+        RETURN e1.id as source,
+               e2.id as target,
+               type(r) as type,
+               properties(r) as properties
+        LIMIT $limit
+        """
+
+        edges_result = await neo4j_service.query_graph(
+            edges_cypher,
+            {"limit": limit}
+        )
+
+        # Format edges for D3.js
+        edges = []
+        edge_id = 0
+        for edge in edges_result:
+            edges.append({
+                "id": f"edge_{edge_id}",
+                "source": edge['source'],
+                "target": edge['target'],
+                "type": edge['type'],
+                "label": edge['type'],
+                "properties": edge.get('properties', {})
+            })
+            edge_id += 1
+
+        # Get graph statistics across all documents
+        total_entities = len(nodes)
+        total_relationships = len(edges)
+
+        return {
+            "nodes": nodes,
+            "edges": edges,
+            "stats": {
+                "node_count": len(nodes),
+                "edge_count": len(edges),
+                "total_entities": total_entities,
+                "total_relationships": total_relationships
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting graph data: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/graph/search")
+async def search_graph(
+    query: str,
+    limit: int = 20
+):
+    """
+    Search for entities across all documents in the knowledge graph
+
+    Args:
+        query: Search query string
+        limit: Maximum number of results
+
+    Returns:
+        List of matching entities
+    """
+    try:
+        cypher = """
+        MATCH (e:__Entity__)-[:BELONGS_TO]->(d:__Document__)
+        WHERE toLower(e.id) CONTAINS toLower($query)
+        OR toLower(e.description) CONTAINS toLower($query)
+        RETURN e.id as id,
+               e.id as label,
+               labels(e) as types,
+               e.description as description,
+               properties(e) as properties
+        LIMIT $limit
+        """
+
+        params = {"query": query, "limit": limit}
+
+        results = await neo4j_service.query_graph(cypher, params)
+
+        # Format results
+        entities = []
+        for result in results:
+            entity_types = [t for t in result.get('types', []) if not t.startswith('__')]
+            entity_type = entity_types[0] if entity_types else "Entity"
+
+            entities.append({
+                "id": result['id'],
+                "label": result['id'],
+                "type": entity_type,
+                "description": result.get('description', ''),
+                "properties": result.get('properties', {})
+            })
+
+        return {
+            "entities": entities,
+            "count": len(entities),
+            "query": query
+        }
+
+    except Exception as e:
+        logger.error(f"Error searching graph: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/graph/clear")
+async def clear_all_graph_data(
+    db: Session = Depends(get_postgres_session)
+):
+    """
+    Clear all graph data from Neo4j - useful for starting fresh
+
+    Returns:
+        Success status and message
+    """
+    try:
+        logger.info("API request to clear all graph data")
+
+        # Clear all data from Neo4j
+        await neo4j_service.clear_all_graph_data()
+
+        # Reset graph_processed flag for all documents
+        documents = db.query(Document).filter(Document.graph_processed == True).all()
+        for doc in documents:
+            doc.graph_processed = False
+            doc.graph_entities_count = 0
+            doc.graph_relationships_count = 0
+        db.commit()
+
+        logger.info(f"All graph data cleared. Reset {len(documents)} document(s) graph_processed flag")
+
+        return {
+            "success": True,
+            "message": f"All graph data cleared successfully. {len(documents)} document(s) reset.",
+            "documents_reset": len(documents)
+        }
+
+    except Exception as e:
+        logger.error(f"Error clearing graph data: {e}")
         raise HTTPException(status_code=500, detail=str(e))

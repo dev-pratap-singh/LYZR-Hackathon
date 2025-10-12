@@ -20,13 +20,13 @@ logger = logging.getLogger(__name__)
 class GraphRAGPipeline:
     """Pipeline for extracting knowledge graph from text using GraphRAG"""
 
-    def __init__(self, chunk_size: int = 1200, chunk_overlap: int = 100):
+    def __init__(self, chunk_size: int = 1200, chunk_overlap: int = 400):
         """
         Initialize GraphRAG Pipeline
 
         Args:
             chunk_size: Size of text chunks for entity extraction (default: 1200)
-            chunk_overlap: Overlap between chunks to capture relationships (default: 100)
+            chunk_overlap: Overlap between chunks to capture relationships (default: 400)
         """
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
