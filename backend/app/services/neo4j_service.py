@@ -12,6 +12,10 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+# Suppress Neo4j client notification warnings about unknown property keys
+# These are harmless warnings when properties exist but aren't in Neo4j's schema
+logging.getLogger('neo4j.notifications').setLevel(logging.ERROR)
+
 
 class Neo4jService:
     """Service for interacting with Neo4j graph database"""
@@ -69,6 +73,24 @@ class Neo4jService:
                     logger.info(f"Constraint created: {constraint.split('CONSTRAINT')[1].split('IF')[0].strip()}")
                 except Exception as e:
                     logger.warning(f"Constraint may already exist: {e}")
+
+            # Create indexes for better query performance and to suppress warnings
+            indexes = [
+                "CREATE INDEX entity_id_index IF NOT EXISTS FOR (e:__Entity__) ON (e.id)",
+                "CREATE INDEX document_id_index IF NOT EXISTS FOR (d:__Document__) ON (d.id)",
+                "CREATE INDEX entity_description_index IF NOT EXISTS FOR (e:__Entity__) ON (e.description)",
+            ]
+
+            for index in indexes:
+                try:
+                    self.graph.query(index)
+                    logger.info(f"Index created: {index.split('INDEX')[1].split('IF')[0].strip()}")
+                except Exception as e:
+                    # Indexes may already exist from constraints
+                    if "equivalent" in str(e).lower() or "already exists" in str(e).lower():
+                        logger.debug(f"Index already exists (possibly from constraint): {e}")
+                    else:
+                        logger.warning(f"Index creation note: {e}")
 
             # Create vector index for entity descriptions (optional, requires Neo4j 5.13+)
             try:
