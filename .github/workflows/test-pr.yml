@@ -13,7 +13,7 @@ jobs:
 
     strategy:
       matrix:
-        python-version: ['3.9', '3.10', '3.11']
+        python-version: ['3.10', '3.11', '3.12']
 
     steps:
       # Checkout the code
@@ -58,7 +58,7 @@ jobs:
       # Upload coverage to Codecov (optional)
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
-        if: matrix.python-version == '3.9'
+        if: matrix.python-version == '3.10'
         with:
           file: ./coverage.xml
           flags: unittests
@@ -79,7 +79,7 @@ jobs:
       # Comment PR with coverage
       - name: Comment PR with coverage
         uses: py-cov-action/python-coverage-comment-action@v3
-        if: matrix.python-version == '3.9' && github.event_name == 'pull_request'
+        if: matrix.python-version == '3.10' && github.event_name == 'pull_request'
         with:
           GITHUB_TOKEN: ${{ github.token }}
           MINIMUM_GREEN: 70
@@ -103,7 +103,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.9'
+          python-version: '3.10'
 
       - name: Install linting tools
         run: |
