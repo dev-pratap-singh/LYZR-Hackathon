@@ -52,3 +52,6 @@ test_coverage_report/
 htmlcov/
 .pytest_cache/
 test-results.xml
+
+# RAGAS Results - Track all summary files for historical analysis
+# No need to ignore - we want to track ragas_summary.json and ragas_summary.csv

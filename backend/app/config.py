@@ -41,6 +41,11 @@ class Settings(BaseSettings):
     graphrag_llm_model: str = "gpt-4o-mini"
     graphrag_embedding_model: str = "text-embedding-3-small"
 
+    # GraphRAG Parallel Processing Settings
+    graphrag_concurrency: int = 25  # Number of concurrent chunk processing tasks
+    graphrag_max_retries: int = 3  # Maximum retries for failed chunk processing
+    graphrag_base_backoff: float = 0.5  # Base backoff time in seconds for retries
+
     # Entity Resolution
     entity_similarity_threshold: float = 0.85
     enable_entity_deduplication: bool = True

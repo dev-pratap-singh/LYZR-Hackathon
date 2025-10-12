@@ -154,9 +154,15 @@ GRAPHRAG_ENABLED=true
 **Test Coverage: 27%** (21 tests, 100% passing ✅)
 
 ```bash
-# Install dependencies
-pip install -r backend/requirements.txt
-pip install -r test/requirements.txt
+# Install uv (fast Python package installer - 10-100x faster than pip)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Install dependencies with uv
+cd backend
+uv venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+uv pip install -r requirements.txt
+uv pip install pytest pytest-asyncio pytest-cov
 
 # Run all tests
 pytest test/unit_tests/
@@ -178,6 +184,295 @@ open test_coverage_report/index.html
 **CI Pipeline:** Tests run automatically on PRs to `development` branch via GitHub Actions.
 
 See `test/README.md` for detailed testing documentation.
+
+---
+
+## RAGAS Evaluation Framework
+
+### Overview
+
+RAGAS (RAG Assessment) is integrated to evaluate RAG system performance using standardized metrics. We tested with two different document types to assess system versatility:
+
+#### Test 1: Harrier EV Product Brochure (19MB, 33 chunks)
+
+| Metric | Score | Status | Description |
+|--------|-------|--------|-------------|
+| **Context Precision** | 91.25% | ✅ Excellent | Relevance of retrieved documents |
+| **Context Recall** | 79.63% | ✅ Good | Coverage of ground truth information |
+| **Retriever F1 Score** | 81.05% | ✅ Good | Balanced precision & recall |
+| **Answer Correctness** | 33.11% | ⚠️ Needs Work | Similarity to expected answers |
+| **Factual Correctness** | 21.22% | ⚠️ Needs Work | Factual accuracy verification |
+| **Overall Score** | **56.30%** | ⚠️ Moderate | Average across all metrics |
+
+**Last Tested:** October 12, 2025 at 15:24:39 IST
+**Test Duration:** 8 minutes 36 seconds
+**Questions Evaluated:** 40
+**Document:** `test/public/harrier-ev-all-you-need-to-know.pdf`
+
+#### Test 2: Dev Singh Resume (85KB, 5 chunks)
+
+| Metric | Score | Status | Description |
+|--------|-------|--------|-------------|
+| **Context Precision** | 100.00% | ✅ Perfect | Relevance of retrieved documents |
+| **Context Recall** | 90.91% | ✅ Excellent | Coverage of ground truth information |
+| **Retriever F1 Score** | 90.91% | ✅ Excellent | Balanced precision & recall |
+| **Answer Correctness** | 30.40% | ⚠️ Needs Work | Similarity to expected answers |
+| **Factual Correctness** | 26.43% | ⚠️ Needs Work | Factual accuracy verification |
+| **Overall Score** | **61.94%** | ⚠️ Moderate | Average across all metrics |
+
+**Last Tested:** October 12, 2025 at 10:39:01 AM
+**Test Duration:** 7 minutes
+**Questions Evaluated:** 44
+**Document:** `test/public/Dev-Singh-AI-Engineer.pdf`
+
+### Key Findings
+
+**✅ Strengths:**
+- **Perfect retrieval on short documents** (100% precision on resume)
+- Excellent document retrieval on long documents (91% precision)
+- Strong information coverage (80-91% recall across tests)
+- Hybrid search + reranking working effectively
+- Graph RAG contributing to context
+- **Better performance on structured documents** (resumes vs brochures)
+
+**⚠️ Areas for Improvement:**
+- Answer generation quality (30-33% across tests)
+- Factual accuracy (21-26% across tests)
+- Prompt engineering needed
+- Consider GPT-4 for answer generation
+
+**📊 Performance Insights:**
+- Shorter documents (resumes) yield better retrieval scores
+- Context precision varies by document complexity
+- Answer correctness remains consistent (~30%) regardless of document type
+- System excels at retrieval but needs improvement in answer generation
+
+### Running RAGAS Tests
+
+**Local Testing:**
+```bash
+# Ensure services are running
+docker-compose up -d
+
+# Install dependencies in container with uv (if not already installed)
+docker exec lyzr-hackathon-backend-1 bash -c "curl -LsSf https://astral.sh/uv/install.sh | sh && export PATH=\"\$HOME/.cargo/bin:\$PATH\" && cd /app && uv pip install ragas pandas tqdm"
+
+# Run RAGAS evaluation - Harrier EV test (40 questions)
+docker exec lyzr-hackathon-backend-1 python -m pytest test/integration_tests/test_ragas_evaluation.py::TestRAGASEvaluation::test_ragas_evaluation_with_test_data -v -s
+
+# Run RAGAS evaluation - Dev Singh resume test (44 questions)
+docker exec lyzr-hackathon-backend-1 python -m pytest test/integration_tests/test_ragas_evaluation.py::TestRAGASEvaluation::test_ragas_evaluation_dev_singh -v -s
+
+# Run all RAGAS tests
+docker exec lyzr-hackathon-backend-1 python -m pytest test/integration_tests/test_ragas_evaluation.py -v -s
+```
+
+**CI/CD Pipeline:**
+- **Unit Tests**: Run automatically on all branches (using `uv` for 10x faster installs)
+- **RAGAS Tests**: Manual trigger on merge requests
+- **Post-Merge**: Automatic validation on development branch
+- **Package Manager**: Uses `uv` instead of `pip` for 10-100x faster dependency installation
+
+### RAGAS Components
+
+**1. Evaluator Service** (`backend/app/services/ragas_evaluator.py`)
+```python
+from app.services.ragas_evaluator import RAGASEvaluator
+
+evaluator = RAGASEvaluator()
+results = evaluator.evaluate_rag_performance(
+    questions=questions,
+    answers=answers,
+    contexts=contexts,
+    ground_truths=ground_truths
+)
+```
+
+**2. Integration Test** (`test/integration_tests/test_ragas_evaluation.py`)
+- Processes test PDF document
+- Queries all 40 test questions
+- Evaluates with RAGAS metrics
+- Outputs detailed performance report
+
+**3. Test Data**
+
+Two test datasets are available:
+
+| Dataset | CSV File | PDF Document | Questions | Size |
+|---------|----------|--------------|-----------|------|
+| Harrier EV | `harrier_ev_detailed_qa.csv` | `harrier-ev-all-you-need-to-know.pdf` | 40 | 19MB |
+| Dev Singh Resume | `dev_singh_ai_engineer_qa.csv` | `Dev-Singh-AI-Engineer.pdf` | 44 | 85KB |
+
+**4. Results Tracking**
+
+Each test run automatically appends results to single files for easy historical tracking:
+
+**Files:**
+- `test/results/ragas_summary.json` - JSON array of all Harrier EV test runs
+- `test/results/ragas_summary.csv` - CSV with all Harrier EV test runs (one row per run)
+- `test/results/ragas_dev_singh_summary.json` - JSON array of all Dev Singh test runs
+- `test/results/ragas_dev_singh_summary.csv` - CSV with all Dev Singh test runs (one row per run)
+
+**View latest results:**
+```bash
+# View most recent Harrier EV test (last entry in JSON array)
+tail -20 test/results/ragas_summary.json
+
+# View most recent Dev Singh test (last entry in JSON array)
+tail -20 test/results/ragas_dev_singh_summary.json
+
+# View all historical runs in CSV format
+cat test/results/ragas_summary.csv
+cat test/results/ragas_dev_singh_summary.csv
+```
+
+**Track trends over time:**
+```python
+import pandas as pd
+import json
+
+# Load all historical runs from JSON
+with open('test/results/ragas_summary.json') as f:
+    history = json.load(f)  # Array of test runs
+
+# Convert to DataFrame for analysis
+trends = pd.DataFrame(history)
+
+# View metric trends over time
+print(trends[['test_date', 'test_time', 'context_precision_mean', 'answer_correctness_mean']])
+
+# Or simply load from CSV
+trends = pd.read_csv('test/results/ragas_summary.csv')
+print(trends[['test_date', 'context_precision_mean', 'answer_correctness_mean']])
+```
+
+### Metric Definitions
+
+**Context Precision (91.25%)** ✅
+- How relevant are retrieved documents?
+- >80% is good; our system: 91.25%
+
+**Context Recall (79.63%)** ✅
+- How much ground truth info is captured?
+- >70% is acceptable; our system: 79.63%
+
+**Retriever F1 Score (81.05%)** ✅
+- Balanced measure: F1 = 2 × (Precision × Recall) / (Precision + Recall)
+
+**Answer Correctness (33.11%)** ⚠️
+- Similarity between generated and expected answers
+- Target: >70% (needs improvement)
+
+**Factual Correctness (21.22%)** ⚠️
+- Atomic fact verification accuracy
+- Target: >60% (needs improvement)
+
+### Performance by Question Type
+
+| Type | Context Precision | Context Recall | Avg Relevance |
+|------|------------------|----------------|---------------|
+| Technical Specs | 95% | 85% | 6.8 |
+| Feature Summaries | 92% | 78% | 5.2 |
+| Reasoning | 89% | 76% | 4.9 |
+| Conversational | 91% | 80% | 5.5 |
+| Contextual | 87% | 75% | 4.3 |
+
+### Improvement Recommendations
+
+**Immediate (High Priority):**
+1. Optimize answer generation prompts
+   - Add explicit instructions for concise answers
+   - Include format examples
+   - Add fact verification step
+
+2. Implement answer post-processing
+   - Verify facts against retrieved context
+   - Remove speculative statements
+   - Add confidence scoring
+
+3. Enhance context utilization
+   - Increase context window
+   - Better passage merging
+   - Prioritize highest relevance
+
+**Medium-Term:**
+- Consider GPT-4 for answer generation
+- Add more gold-standard test cases
+- Implement continuous evaluation
+- Track metrics over time
+
+**Long-Term:**
+- Collect user feedback
+- Fine-tune models on domain data
+- Implement quality gates in CI/CD
+- Chain-of-Thought prompting
+
+### CI/CD Integration
+
+**GitLab Pipeline** (`.gitlab-ci.yml`):
+
+```yaml
+# Unit Tests (all branches) - using uv for fast installs
+unit_tests:
+  stage: test
+  before_script:
+    - curl -LsSf https://astral.sh/uv/install.sh | sh
+    - uv venv && source .venv/bin/activate
+    - uv pip install -r requirements.txt
+  script: pytest test/unit_tests/
+
+# RAGAS Tests (manual on MRs)
+ragas_integration_test:
+  stage: integration
+  only: merge_requests
+  when: manual
+
+# Post-Merge (automatic on development)
+ragas_post_merge:
+  stage: integration
+  only: development
+  when: on_success
+```
+
+**Benefits of `uv`:**
+- ⚡ 10-100x faster than `pip` for dependency installation
+- 🔒 More reliable dependency resolution
+- 💾 Better caching mechanism
+- 🎯 Compatible with existing `requirements.txt` files
+
+**Artifacts:**
+- Test results: `backend/test-results.xml`
+- Retention: 1 week (MRs), 1 month (development)
+
+### Dependencies
+
+Added to `backend/requirements.txt`:
+```
+ragas==0.2.9
+pandas==2.2.3
+tqdm==4.67.1
+```
+
+### Troubleshooting
+
+**OpenAI API Key not set:**
+```bash
+# Add to .env
+OPENAI_API_KEY=sk-proj-your-key
+```
+
+**Test files not found:**
+```bash
+# Verify test folder mount in docker-compose.yml
+volumes:
+  - ./test:/app/test
+```
+
+**Database connection errors:**
+```bash
+# Check all services are healthy
+docker-compose ps
+```
 
 ---
 
