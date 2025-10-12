@@ -14,7 +14,8 @@ PDF-2-Images -> Use a Late Interaction Model (Ex: ) + Multi Vector Embeddings ->
 4. For a big document, the graph creation takes a lot of time, we could speed it up by parallel processing. We can use asyncio with semaphore to process them parallely.
 5. Presently I'm using LLMGraphTransformer from langchain_experimental.graph_transformers to build the graph using all the node types and all the relationship types but a better Top-Down approach would be to let the use to upload his/her own Ontology as the LLMs can very creative, having a domain specific Ontology will help improve the graph to a large extend. 
 6. Use open source alternative to build and maintain graphs like Cognee to build graphs, Graphiti to keep graphs updated, etc.
+7. I've been testing the system with only 1 document need to stress test with 100+ documents to see how the graph evolves with time. Need to improve the graph evolving and re-organizing strategy as well.
 
 
 Hi, big fan!
-Even if I don't win the Hackathon! Would love to meet the team in Bangalore for a coffee. ✌️
+If I don't win the Hackathon! Would love to meet the team in Bangalore for a coffee. ✌️

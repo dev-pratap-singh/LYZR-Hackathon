@@ -19,6 +19,7 @@ from app.services.document_processor import DocumentProcessingService
 from app.services.bm25_search import BM25SearchService
 from app.services.neo4j_service import neo4j_service
 from app.services.graphrag_pipeline import GraphRAGPipeline
+from app.services.elasticsearch_service import elasticsearch_service
 from app.utils.document_helpers import process_document_pipeline
 
 logger = logging.getLogger(__name__)
@@ -291,6 +292,13 @@ async def delete_document(
             logger.info(f"Graph data deleted for document {document.id}")
         except Exception as e:
             logger.warning(f"Failed to delete graph data: {e}")
+
+        # Delete from Elasticsearch
+        try:
+            await elasticsearch_service.delete_document(str(document.id))
+            logger.info(f"Elasticsearch document deleted for {document.id}")
+        except Exception as e:
+            logger.warning(f"Failed to delete from Elasticsearch: {e}")
 
         # Delete files
         if os.path.exists(document.filepath):
@@ -694,4 +702,196 @@ async def clear_all_graph_data(
 
     except Exception as e:
         logger.error(f"Error clearing graph data: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==== Elasticsearch / Filter Search Endpoints ====
+class FilterSearchRequest(BaseModel):
+    query: str = ""
+    filters: Optional[dict] = None
+    size: int = 10
+    from_: int = 0
+
+
+@router.post("/search/filter")
+async def filter_search(request: FilterSearchRequest):
+    """
+    Search documents using Elasticsearch with metadata filters
+
+    Args:
+        request: Search query and filter parameters
+
+    Returns:
+        Filtered search results
+    """
+    try:
+        results = await elasticsearch_service.search(
+            query=request.query,
+            filters=request.filters,
+            size=request.size,
+            from_=request.from_
+        )
+
+        return {
+            "success": True,
+            "results": results
+        }
+
+    except Exception as e:
+        logger.error(f"Error in filter search: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/search/aggregations/{field}")
+async def get_search_aggregations(field: str):
+    """
+    Get aggregations (facets) for a field
+
+    Args:
+        field: Field to aggregate (author, categories, tags, etc.)
+
+    Returns:
+        Aggregation results
+    """
+    try:
+        aggregations = await elasticsearch_service.get_aggregations(field)
+
+        return {
+            "success": True,
+            "aggregations": aggregations
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting aggregations: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/documents/filters")
+async def get_available_filters():
+    """
+    Get available filter options (authors, categories, tags)
+
+    Returns:
+        Available filter values for all fields
+    """
+    try:
+        # Get aggregations for multiple fields
+        authors = await elasticsearch_service.get_aggregations("author")
+        categories = await elasticsearch_service.get_aggregations("categories")
+        tags = await elasticsearch_service.get_aggregations("tags")
+        doc_types = await elasticsearch_service.get_aggregations("document_type")
+
+        return {
+            "success": True,
+            "filters": {
+                "authors": authors.get("values", []),
+                "categories": categories.get("values", []),
+                "tags": tags.get("values", []),
+                "document_types": doc_types.get("values", [])
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting available filters: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/documents/{document_id}/reindex")
+async def reindex_document(
+    document_id: str,
+    db: Session = Depends(get_postgres_session)
+):
+    """
+    Reindex a specific document in Elasticsearch
+
+    Args:
+        document_id: Document ID to reindex
+        db: Database session
+
+    Returns:
+        Reindexing status
+    """
+    try:
+        document = db.query(Document).filter(Document.id == document_id).first()
+
+        if not document:
+            raise HTTPException(status_code=404, detail="Document not found")
+
+        if not document.is_processed or not document.text_filepath:
+            raise HTTPException(
+                status_code=400,
+                detail="Document must be processed first"
+            )
+
+        # Create index if needed
+        elasticsearch_service.create_index()
+
+        # Read text content
+        with open(document.text_filepath, 'r', encoding='utf-8') as f:
+            text_content = f.read()
+
+        # Reindex
+        success = await elasticsearch_service.index_document(
+            document_id=str(document.id),
+            content=text_content,
+            filename=document.original_filename,
+            author=document.author,
+            document_type=document.document_type or "pdf",
+            categories=document.categories if isinstance(document.categories, list) else [],
+            tags=document.tags if isinstance(document.tags, list) else [],
+            uploaded_at=document.uploaded_at,
+            processed_at=document.processed_at,
+            file_size=document.file_size,
+            chunk_count=document.total_chunks,
+            user_id=document.user_id,
+            metadata=document.doc_metadata
+        )
+
+        if success:
+            from datetime import datetime
+            document.elasticsearch_indexed = True
+            document.elasticsearch_index_time = datetime.now()
+            db.commit()
+
+            return {
+                "success": True,
+                "message": f"Document {document_id} reindexed successfully"
+            }
+        else:
+            return {
+                "success": False,
+                "message": "Reindexing failed"
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error reindexing document: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/elasticsearch/create-index")
+async def create_elasticsearch_index():
+    """
+    Create Elasticsearch index with proper mappings
+
+    Returns:
+        Index creation status
+    """
+    try:
+        success = elasticsearch_service.create_index()
+
+        if success:
+            return {
+                "success": True,
+                "message": "Elasticsearch index created successfully"
+            }
+        else:
+            return {
+                "success": False,
+                "message": "Failed to create index"
+            }
+
+    except Exception as e:
+        logger.error(f"Error creating Elasticsearch index: {e}")
         raise HTTPException(status_code=500, detail=str(e))

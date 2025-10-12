@@ -42,6 +42,21 @@ class Settings(BaseSettings):
     entity_similarity_threshold: float = 0.85
     enable_entity_deduplication: bool = True
 
+    # Elasticsearch Configuration
+    elasticsearch_host: str = "elasticsearch"
+    elasticsearch_port: int = 9200
+    elasticsearch_index_name: str = "rag_documents"
+
+    # Search Configuration
+    enable_vector_search: bool = True
+    enable_graph_search: bool = True
+    enable_filter_search: bool = True
+    default_search_tools: str = "auto"
+
+    @property
+    def elasticsearch_url(self) -> str:
+        return f"http://{self.elasticsearch_host}:{self.elasticsearch_port}"
+
     @property
     def postgres_url(self) -> str:
         return f"postgresql://{self.postgres_user}:{self.postgres_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"

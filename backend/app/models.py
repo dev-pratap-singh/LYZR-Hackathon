@@ -38,7 +38,17 @@ class Document(Base):
     graph_relationships_count = Column(Integer, default=0)
     graph_processing_time = Column(Integer, nullable=True)  # In seconds
 
-    # Metadata
+    # Elasticsearch Indexing
+    elasticsearch_indexed = Column(Boolean, default=False)
+    elasticsearch_index_time = Column(DateTime(timezone=True), nullable=True)
+
+    # Metadata for Elasticsearch filtering
+    author = Column(String(255), nullable=True)
+    document_type = Column(String(100), nullable=True)
+    categories = Column(JSON, default=[])  # Array of categories
+    tags = Column(JSON, default=[])  # Array of tags
+
+    # General Metadata
     user_id = Column(String(100), default="default_user")
     doc_metadata = Column(JSON, default={})
 

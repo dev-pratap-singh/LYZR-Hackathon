@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from app.api.rag_routes import router as rag_router
 from app.config import settings
 from app.database import init_databases
+from app.services.elasticsearch_service import elasticsearch_service
 
 # Configure logging
 logging.basicConfig(
@@ -28,6 +29,16 @@ async def lifespan(app: FastAPI):
         init_databases()
         logger.info("✅ Databases initialized successfully")
 
+        # Initialize Elasticsearch index (if enabled)
+        if settings.enable_filter_search:
+            try:
+                logger.info("Initializing Elasticsearch index...")
+                elasticsearch_service.create_index()
+                logger.info("✅ Elasticsearch index ready")
+            except Exception as es_error:
+                logger.warning(f"⚠️ Elasticsearch initialization failed: {es_error}")
+                logger.warning("Filter search will not be available")
+
     except Exception as e:
         logger.error(f"❌ Database initialization failed: {e}")
         raise
@@ -38,6 +49,13 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     logger.info("Shutting down RAG System...")
+
+    # Close Elasticsearch connections
+    if settings.enable_filter_search:
+        try:
+            await elasticsearch_service.close()
+        except Exception as e:
+            logger.error(f"Error closing Elasticsearch: {e}")
 
 
 app = FastAPI(
@@ -68,9 +86,12 @@ async def root():
         "version": "2.0.0",
         "features": [
             "PDF document upload",
-            "Document processing with Docling",
-            "Vector search with PGVector",
-            "Streaming responses with CoT reasoning",
+            "Document processing with PyMuPDF and Docling",
+            "Vector search with PGVector and hybrid retrieval (Vector + BM25)",
+            "Graph search with Neo4j knowledge graphs",
+            "Filter search with Elasticsearch metadata filtering",
+            "Multi-tool search agent with automatic tool selection",
+            "Streaming responses with Chain of Thought reasoning",
             "OpenAI embeddings and LLM"
         ]
     }
