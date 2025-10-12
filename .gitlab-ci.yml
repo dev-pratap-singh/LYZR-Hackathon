@@ -1,0 +1,149 @@
+image: python:3.11
+
+stages:
+  - test
+  - integration
+
+variables:
+  UV_CACHE_DIR: "$CI_PROJECT_DIR/.cache/uv"
+  POSTGRES_DB: rag_database
+  POSTGRES_USER: test_user
+  POSTGRES_PASSWORD: test_password
+  POSTGRES_HOST: postgres
+  NEO4J_AUTH: neo4j/test_password
+  NEO4J_HOST: neo4j
+
+cache:
+  paths:
+    - .cache/uv
+    - .venv/
+
+# Unit tests - runs on all branches and merge requests
+unit_tests:
+  stage: test
+  before_script:
+    - cd backend
+    # Install uv (fast Python package installer)
+    - curl -LsSf https://astral.sh/uv/install.sh | sh
+    - export PATH="$HOME/.cargo/bin:$PATH"
+    # Create venv and install dependencies with uv
+    - uv venv
+    - source .venv/bin/activate
+    - uv pip install -r requirements.txt
+    - uv pip install pytest pytest-asyncio
+  script:
+    - python -m pytest test/unit_tests/ -v --tb=short
+  only:
+    - branches
+    - merge_requests
+
+# RAGAS Integration Tests - runs on merge requests to development branch
+ragas_integration_test:
+  stage: integration
+  image: python:3.11
+  services:
+    - postgres:15
+    - neo4j:5.14
+    - docker:24-dind
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+    POSTGRES_HOST_AUTH_METHOD: trust
+    NEO4J_AUTH: neo4j/test_password
+    NEO4J_ACCEPT_LICENSE_AGREEMENT: "yes"
+    # OpenAI API Key - should be set in GitLab CI/CD variables
+    OPENAI_API_KEY: $OPENAI_API_KEY
+  before_script:
+    - cd backend
+    # Install uv (fast Python package installer)
+    - curl -LsSf https://astral.sh/uv/install.sh | sh
+    - export PATH="$HOME/.cargo/bin:$PATH"
+    # Create venv and install dependencies with uv (much faster than pip)
+    - uv venv
+    - source .venv/bin/activate
+    - uv pip install -r requirements.txt
+    - uv pip install pytest pytest-asyncio
+    # Wait for services to be ready
+    - |
+      echo "Waiting for PostgreSQL..."
+      for i in {1..30}; do
+        nc -z postgres 5432 && break
+        echo "Waiting for postgres... $i"
+        sleep 2
+      done
+    - |
+      echo "Waiting for Neo4j..."
+      for i in {1..30}; do
+        nc -z neo4j 7687 && break
+        echo "Waiting for neo4j... $i"
+        sleep 2
+      done
+  script:
+    - echo "Running RAGAS integration tests..."
+    - python -m pytest test/integration_tests/test_ragas_evaluation.py -v --tb=short -s
+  only:
+    - merge_requests
+  when: manual  # Make it manual for now, can be changed to 'on_success' for automatic runs
+  allow_failure: false
+  artifacts:
+    when: always
+    reports:
+      junit: backend/test-results.xml
+    paths:
+      - backend/test-results.xml
+    expire_in: 1 week
+
+# Optional: Run RAGAS tests on development branch after merge
+ragas_post_merge:
+  stage: integration
+  image: python:3.11
+  services:
+    - postgres:15
+    - neo4j:5.14
+    - docker:24-dind
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+    POSTGRES_HOST_AUTH_METHOD: trust
+    NEO4J_AUTH: neo4j/test_password
+    NEO4J_ACCEPT_LICENSE_AGREEMENT: "yes"
+    OPENAI_API_KEY: $OPENAI_API_KEY
+  before_script:
+    - cd backend
+    # Install uv (fast Python package installer)
+    - curl -LsSf https://astral.sh/uv/install.sh | sh
+    - export PATH="$HOME/.cargo/bin:$PATH"
+    # Create venv and install dependencies with uv (much faster than pip)
+    - uv venv
+    - source .venv/bin/activate
+    - uv pip install -r requirements.txt
+    - uv pip install pytest pytest-asyncio
+    # Wait for services
+    - |
+      echo "Waiting for PostgreSQL..."
+      for i in {1..30}; do
+        nc -z postgres 5432 && break
+        echo "Waiting for postgres... $i"
+        sleep 2
+      done
+    - |
+      echo "Waiting for Neo4j..."
+      for i in {1..30}; do
+        nc -z neo4j 7687 && break
+        echo "Waiting for neo4j... $i"
+        sleep 2
+      done
+  script:
+    - echo "Running post-merge RAGAS validation..."
+    - python -m pytest test/integration_tests/test_ragas_evaluation.py -v --tb=short -s
+  only:
+    - development
+  when: on_success
+  allow_failure: true  # Don't block pipeline if RAGAS tests fail on development
+  artifacts:
+    when: always
+    reports:
+      junit: backend/test-results.xml
+    paths:
+      - backend/test-results.xml
+    expire_in: 1 month

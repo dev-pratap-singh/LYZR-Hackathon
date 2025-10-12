@@ -52,3 +52,8 @@ test_coverage_report/
 htmlcov/
 .pytest_cache/
 test-results.xml
+
+# RAGAS Results - Keep latest summary, ignore historical runs
+test/results/ragas_summary_*.json
+test/results/ragas_detailed_*.csv
+!test/results/ragas_latest_summary.json

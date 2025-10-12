@@ -52,6 +52,7 @@ services:
     volumes:
       - ./backend/app:/app/app
       - ./storage:/app/storage
+      - ./test:/app/test
     depends_on:
       - postgres
       - pgvector
