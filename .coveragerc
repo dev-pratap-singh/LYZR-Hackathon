@@ -1,0 +1,30 @@
+# Coverage.py configuration
+[run]
+source = backend/app
+relative_files = true
+omit =
+    */tests/*
+    */test/*
+    */test_*
+    */__pycache__/*
+    */venv/*
+    */env/*
+    */frontend/*
+    */node_modules/*
+    */storage/*
+    */.git/*
+    */graphrag-sample-files/*
+
+[report]
+precision = 2
+show_missing = true
+skip_covered = false
+
+[xml]
+output = coverage.xml
+
+[html]
+directory = test_coverage_report
+
+[json]
+output = test_coverage.json

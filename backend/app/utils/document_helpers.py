@@ -1,0 +1,241 @@
+"""
+Document Processing Helper Functions
+Extracted from API routes for better code organization
+"""
+import logging
+from datetime import datetime
+from typing import Literal
+
+from sqlalchemy.orm import Session
+
+from app.models import Document
+from app.services.document_processor import DocumentProcessingService
+from app.services.embedding_service import EmbeddingService
+from app.services.vector_store import VectorStoreService
+from app.services.bm25_search import BM25SearchService
+from app.services.graphrag_pipeline import GraphRAGPipeline
+from app.services.neo4j_service import neo4j_service
+from app.services.elasticsearch_service import elasticsearch_service
+from app.services.graph_refinement_pipeline import GraphRefinementPipeline
+from app.config import settings
+
+logger = logging.getLogger(__name__)
+
+ProcessingMethod = Literal["pymupdf", "docling"]
+
+
+async def process_document_pipeline(
+    document: Document,
+    db: Session,
+    method: ProcessingMethod = "pymupdf"
+) -> None:
+    """
+    Process document: extract text, chunk, embed, store
+
+    Args:
+        document: Document model instance
+        db: Database session
+        method: Processing method to use ("pymupdf" or "docling")
+
+    Raises:
+        Exception: If processing fails
+    """
+    doc_processor = DocumentProcessingService()
+    embedding_service = EmbeddingService()
+    vector_store = VectorStoreService()
+    bm25_service = BM25SearchService()
+
+    try:
+        logger.info(f"Processing document: {document.id} with method: {method}")
+
+        # Update status
+        document.processing_status = "processing"
+        db.commit()
+
+        # Read file content
+        with open(document.filepath, 'rb') as f:
+            content = f.read()
+
+        # Process with selected method
+        result = await doc_processor.process_document(
+            content,
+            document.original_filename,
+            str(document.id),
+            method=method
+        )
+
+        if not result['success']:
+            document.processing_status = "failed"
+            document.error_message = result.get('error', 'Unknown error')
+            db.commit()
+            raise Exception(result.get('error', 'Processing failed'))
+
+        # Update document with text path
+        document.text_filepath = result['text_path']
+        db.commit()
+
+        # Generate embeddings
+        logger.info("Generating embeddings...")
+        chunk_texts = [chunk['text'] for chunk in result['chunks']]
+        embeddings = await embedding_service.generate_embeddings_batch(chunk_texts)
+
+        # Store in PGVector
+        logger.info("Storing embeddings in PGVector...")
+        stored_count = await vector_store.store_embeddings(
+            document.id,
+            result['chunks'],
+            embeddings
+        )
+
+        # Build BM25 index for keyword search
+        logger.info("Building BM25 index for keyword search...")
+        await bm25_service.build_index(document.id)
+        logger.info(f"✓ Built BM25 index for document {document.id}")
+
+        # Update document status (Vector search ready)
+        document.is_processed = True
+        document.processing_status = "completed"
+        document.processed_at = datetime.now()
+        document.total_chunks = stored_count
+        db.commit()
+
+        logger.info(f"✅ Document processed successfully: {document.id} ({method})")
+        logger.info(f"   - Chunks: {stored_count}")
+        logger.info(f"   - Text length: {result['text_length']} chars")
+
+        # ====== GraphRAG Processing (if enabled) ======
+        if settings.graphrag_enabled:
+            try:
+                logger.info(f"🕸️ Starting GraphRAG processing for document {document.id}...")
+
+                # Initialize GraphRAG pipeline
+                graphrag_pipeline = GraphRAGPipeline()
+
+                # Read extracted text
+                with open(document.text_filepath, 'r', encoding='utf-8') as f:
+                    text_content = f.read()
+
+                # Process with GraphRAG (extract entities and relationships)
+                graph_result = await graphrag_pipeline.process_document(
+                    text_content=text_content,
+                    document_id=str(document.id)
+                )
+
+                logger.info(f"✓ GraphRAG extraction complete: {graph_result['entities_count']} entities, {graph_result['relationships_count']} relationships")
+
+                # Create Neo4j constraints and indexes
+                await neo4j_service.create_constraints()
+                logger.info("✓ Neo4j constraints created")
+
+                # Import all graph documents into Neo4j (one per chunk)
+                logger.info(f"Importing graph into Neo4j ({len(graph_result['graph_documents'])} chunks)...")
+                await neo4j_service.import_graph_documents(
+                    graph_documents=graph_result["graph_documents"],  # Now a list from all chunks
+                    document_id=str(document.id)
+                )
+                logger.info("✓ Graph imported to Neo4j")
+
+                # ====== Entity Deduplication & Graph Refinement (if enabled) ======
+                if settings.enable_entity_deduplication:
+                    try:
+                        logger.info(f"🔧 Starting entity deduplication for document {document.id}...")
+
+                        # Initialize graph refinement pipeline
+                        refinement_pipeline = GraphRefinementPipeline()
+
+                        # Run graph refinement (entity deduplication, enhancement)
+                        refinement_stats = await refinement_pipeline.refine_graph(
+                            document_id=str(document.id)
+                        )
+
+                        logger.info(f"✓ Entity deduplication complete:")
+                        logger.info(f"   - Entities processed: {refinement_stats['entities_processed']}")
+                        logger.info(f"   - Duplicates merged: {refinement_stats['auto_merged']}")
+                        logger.info(f"   - Suggested merges: {refinement_stats['suggested_merges']}")
+                        logger.info(f"   - Time: {refinement_stats['total_time_seconds']:.2f}s")
+
+                        # Close the refinement pipeline connection
+                        refinement_pipeline.close()
+
+                    except Exception as refinement_error:
+                        # Log error but don't fail the entire pipeline
+                        logger.error(f"⚠️ Entity deduplication failed (graph still available): {refinement_error}")
+                else:
+                    logger.info("ℹ️ Entity deduplication disabled (ENABLE_ENTITY_DEDUPLICATION=false)")
+
+                # Update document with graph statistics
+                document.graph_processed = True
+                document.graph_entities_count = graph_result["entities_count"]
+                document.graph_relationships_count = graph_result["relationships_count"]
+                document.graph_processing_time = graph_result["processing_time"]
+                db.commit()
+
+                logger.info(f"✅ GraphRAG processing complete for {document.id}")
+                logger.info(f"   - Chunks processed: {graph_result['chunks_processed']}")
+                logger.info(f"   - Entities: {graph_result['entities_count']}")
+                logger.info(f"   - Relationships: {graph_result['relationships_count']}")
+                logger.info(f"   - Processing time: {graph_result['processing_time']}s")
+
+            except Exception as graph_error:
+                # Log error but don't fail the entire pipeline
+                # Vector search will still work
+                logger.error(f"⚠️ GraphRAG processing failed (vector search still available): {graph_error}")
+                document.graph_processed = False
+                document.error_message = f"Graph processing failed: {str(graph_error)}"
+                db.commit()
+        else:
+            logger.info("ℹ️ GraphRAG processing disabled (GRAPHRAG_ENABLED=false)")
+
+        # ====== Elasticsearch Indexing (if enabled) ======
+        if settings.enable_filter_search:
+            try:
+                logger.info(f"🔍 Starting Elasticsearch indexing for document {document.id}...")
+
+                # Create index if it doesn't exist
+                elasticsearch_service.create_index()
+
+                # Read extracted text
+                with open(document.text_filepath, 'r', encoding='utf-8') as f:
+                    text_content = f.read()
+
+                # Index document in Elasticsearch
+                index_success = await elasticsearch_service.index_document(
+                    document_id=str(document.id),
+                    content=text_content,
+                    filename=document.original_filename,
+                    author=document.author,
+                    document_type=document.document_type or "pdf",
+                    categories=document.categories if isinstance(document.categories, list) else [],
+                    tags=document.tags if isinstance(document.tags, list) else [],
+                    uploaded_at=document.uploaded_at,
+                    processed_at=document.processed_at,
+                    file_size=document.file_size,
+                    chunk_count=document.total_chunks,
+                    user_id=document.user_id,
+                    metadata=document.doc_metadata
+                )
+
+                if index_success:
+                    # Update document with indexing status
+                    document.elasticsearch_indexed = True
+                    document.elasticsearch_index_time = datetime.now()
+                    db.commit()
+
+                    logger.info(f"✅ Elasticsearch indexing complete for {document.id}")
+                else:
+                    logger.error(f"⚠️ Elasticsearch indexing failed for {document.id}")
+
+            except Exception as es_error:
+                # Log error but don't fail the entire pipeline
+                logger.error(f"⚠️ Elasticsearch indexing failed (other search methods still available): {es_error}")
+                document.elasticsearch_indexed = False
+                db.commit()
+        else:
+            logger.info("ℹ️ Elasticsearch indexing disabled (ENABLE_FILTER_SEARCH=false)")
+
+    except Exception as e:
+        logger.error(f"❌ Document processing error: {e}")
+        document.processing_status = "failed"
+        document.error_message = str(e)
+        db.commit()
+        raise

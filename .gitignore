@@ -1,1 +1,57 @@
-/agentic-rag-system-sample-files
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build
+build/
+dist/
+
+# Storage
+storage/*
+!storage/.gitkeep
+
+# Logs
+*.log
+logs/
+
+# Sample files
+/sample-files
+
+# prmpt files
+prompts/
+
+# Testing / Coverage
+.coverage
+.coverage.*
+coverage.xml
+test_coverage.json
+test_coverage_report/
+htmlcov/
+.pytest_cache/
+test-results.xml
+
+# RAGAS Results - Track all summary files for historical analysis
+# No need to ignore - we want to track ragas_summary.json and ragas_summary.csv
