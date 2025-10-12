@@ -210,11 +210,17 @@ class SearchAgent:
                         document_id=str(document.id)
                     )
 
-                    # Update document record
-                    document.graph_processed = True
-                    document.graph_entities_count = graph_result["entities_count"]
-                    document.graph_relationships_count = graph_result["relationships_count"]
-                    db_session.commit()
+                    # Update document record - refresh to avoid stale data
+                    try:
+                        db_session.refresh(document)
+                        document.graph_processed = True
+                        document.graph_entities_count = graph_result["entities_count"]
+                        document.graph_relationships_count = graph_result["relationships_count"]
+                        db_session.commit()
+                    except Exception as commit_error:
+                        logger.warning(f"Could not update document {document.id}: {commit_error}")
+                        db_session.rollback()
+                        # Document was already updated by another process, which is fine
 
                     logger.info(
                         f"Graph processed for {document.id}: "
@@ -231,6 +237,10 @@ class SearchAgent:
 
         except Exception as e:
             logger.error(f"Error in ensure_graph_processed: {e}")
+            try:
+                db_session.rollback()
+            except:
+                pass  # Session might already be closed
 
     async def vector_search_sync(self, query: str) -> str:
         """

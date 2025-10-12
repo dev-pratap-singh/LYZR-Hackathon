@@ -6,9 +6,9 @@ from typing import Optional
 class Settings(BaseSettings):
     model_config = ConfigDict(extra='ignore', env_file='.env', case_sensitive=False)
 
-    # Database - Required from environment
-    postgres_user: str
-    postgres_password: str
+    # Database - Defaults provided for testing
+    postgres_user: str = "test_user"
+    postgres_password: str = "test_password"
     postgres_db: str = "rag_database"
     postgres_host: str = "postgres"
     postgres_port: int = 5432
@@ -18,10 +18,10 @@ class Settings(BaseSettings):
     pgvector_port: int = 5432
     pgvector_db: str = "vector_db"
 
-    # Neo4j - Password required from environment
+    # Neo4j - Default auth provided for testing
     neo4j_host: str = "neo4j"
     neo4j_port: int = 7687
-    neo4j_auth: str  # Format: username/password
+    neo4j_auth: str = "neo4j/test_password"  # Format: username/password
 
     # OpenAI
     openai_api_key: Optional[str] = None
