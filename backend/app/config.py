@@ -1,8 +1,11 @@
 from pydantic_settings import BaseSettings
+from pydantic import ConfigDict
 from typing import Optional
 
 
 class Settings(BaseSettings):
+    model_config = ConfigDict(extra='ignore', env_file='.env', case_sensitive=False)
+
     # Database - Required from environment
     postgres_user: str
     postgres_password: str
@@ -76,10 +79,6 @@ class Settings(BaseSettings):
     @property
     def neo4j_password(self) -> str:
         return self.neo4j_auth.split('/')[1]
-
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
 
 
 settings = Settings()

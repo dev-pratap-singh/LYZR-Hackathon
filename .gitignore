@@ -38,7 +38,7 @@ storage/*
 logs/
 
 # Sample files
-/graphrag-sample-files
+/sample-files
 
 # prmpt files
 prompts/

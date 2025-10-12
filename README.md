@@ -147,9 +147,43 @@ GRAPHRAG_ENABLED=true
 
 ---
 
-## Testing
+## Testing & Development
 
-### 1. Upload Document
+### Unit Tests
+
+**Test Coverage: 27%** (21 tests, 100% passing ✅)
+
+```bash
+# Install dependencies
+pip install -r backend/requirements.txt
+pip install -r test/requirements.txt
+
+# Run all tests
+pytest test/unit_tests/
+
+# Run with coverage report
+pytest test/unit_tests/ --cov=backend/app --cov-report=html
+
+# View coverage report
+open test_coverage_report/index.html
+```
+
+**High Coverage Modules:**
+- `models.py`: 100%
+- `config.py`: 100%
+- `document_helpers.py`: 90%
+- `document_processor.py`: 83%
+- `vector_store.py`: 66%
+
+**CI Pipeline:** Tests run automatically on PRs to `development` branch via GitHub Actions.
+
+See `test/README.md` for detailed testing documentation.
+
+---
+
+### System Testing
+
+#### 1. Upload Document
 
 ```bash
 curl -X POST http://localhost:8000/api/rag/upload \
@@ -171,7 +205,7 @@ Chunk 2: 5 entities, 4 relationships
 GraphRAG complete: 85 entities, 142 relationships from 42 chunks
 ```
 
-### 2. Check Results
+#### 2. Check Results
 
 ```bash
 # Get graph stats
@@ -184,7 +218,7 @@ curl "http://localhost:8000/api/rag/graph/entities?document_id={id}&limit=10"
 curl "http://localhost:8000/api/rag/graph/relationships?document_id={id}&limit=10"
 ```
 
-### 3. Test Queries
+#### 3. Test Queries
 
 **Relationship query → Graph Search:**
 ```bash
@@ -200,7 +234,7 @@ curl -X POST http://localhost:8000/api/rag/query/stream \
   -d '{"query": "What is the main topic?", "document_id": "{id}"}'
 ```
 
-### 4. View Graph in Neo4j
+#### 4. View Graph in Neo4j
 
 ```cypher
 // Open http://localhost:7474 and run:
