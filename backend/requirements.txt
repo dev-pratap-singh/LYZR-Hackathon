@@ -33,3 +33,7 @@ torch==2.5.1
 langchain-neo4j==0.2.0
 networkx==3.4.2
 graphdatascience==1.14
+
+# Elasticsearch
+elasticsearch==8.11.0
+elasticsearch-dsl==8.11.0

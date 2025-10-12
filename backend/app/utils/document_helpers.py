@@ -15,6 +15,7 @@ from app.services.vector_store import VectorStoreService
 from app.services.bm25_search import BM25SearchService
 from app.services.graphrag_pipeline import GraphRAGPipeline
 from app.services.neo4j_service import neo4j_service
+from app.services.elasticsearch_service import elasticsearch_service
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -155,6 +156,53 @@ async def process_document_pipeline(
                 db.commit()
         else:
             logger.info("ℹ️ GraphRAG processing disabled (GRAPHRAG_ENABLED=false)")
+
+        # ====== Elasticsearch Indexing (if enabled) ======
+        if settings.enable_filter_search:
+            try:
+                logger.info(f"🔍 Starting Elasticsearch indexing for document {document.id}...")
+
+                # Create index if it doesn't exist
+                elasticsearch_service.create_index()
+
+                # Read extracted text
+                with open(document.text_filepath, 'r', encoding='utf-8') as f:
+                    text_content = f.read()
+
+                # Index document in Elasticsearch
+                index_success = await elasticsearch_service.index_document(
+                    document_id=str(document.id),
+                    content=text_content,
+                    filename=document.original_filename,
+                    author=document.author,
+                    document_type=document.document_type or "pdf",
+                    categories=document.categories if isinstance(document.categories, list) else [],
+                    tags=document.tags if isinstance(document.tags, list) else [],
+                    uploaded_at=document.uploaded_at,
+                    processed_at=document.processed_at,
+                    file_size=document.file_size,
+                    chunk_count=document.total_chunks,
+                    user_id=document.user_id,
+                    metadata=document.doc_metadata
+                )
+
+                if index_success:
+                    # Update document with indexing status
+                    document.elasticsearch_indexed = True
+                    document.elasticsearch_index_time = datetime.now()
+                    db.commit()
+
+                    logger.info(f"✅ Elasticsearch indexing complete for {document.id}")
+                else:
+                    logger.error(f"⚠️ Elasticsearch indexing failed for {document.id}")
+
+            except Exception as es_error:
+                # Log error but don't fail the entire pipeline
+                logger.error(f"⚠️ Elasticsearch indexing failed (other search methods still available): {es_error}")
+                document.elasticsearch_indexed = False
+                db.commit()
+        else:
+            logger.info("ℹ️ Elasticsearch indexing disabled (ENABLE_FILTER_SEARCH=false)")
 
     except Exception as e:
         logger.error(f"❌ Document processing error: {e}")

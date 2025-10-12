@@ -24,6 +24,7 @@ from app.services.reranker import RerankerService
 from app.services.graph_search import graph_search_service
 from app.services.graphrag_pipeline import GraphRAGPipeline
 from app.services.neo4j_service import neo4j_service
+from app.services.elasticsearch_service import elasticsearch_service
 
 logger = logging.getLogger(__name__)
 
@@ -310,21 +311,97 @@ class SearchAgent:
             logger.error(f"Graph search error: {e}", exc_info=True)
             return f"❌ Graph search error: {str(e)}"
 
-    def filter_search_sync(self, query: str) -> str:
+    async def filter_search_sync(self, query: str) -> str:
         """
-        Execute metadata-based filter search (placeholder for future implementation)
+        Execute metadata-based filter search using Elasticsearch
+
+        This method extracts filter criteria from natural language queries and
+        searches documents based on metadata (dates, authors, categories, tags, etc.)
         """
-        return f"""🔍 **Filter Search** (Coming Soon)
+        try:
+            logger.info(f"Filter search tool called with query: {query[:100]}")
+
+            # Use LLM to extract filter criteria from natural language
+            filter_extraction_prompt = f"""Extract filter criteria from this query. Return a JSON object with these fields (use null if not mentioned):
+- author: string (author name)
+- document_type: string (pdf, txt, etc.)
+- categories: array of strings
+- tags: array of strings
+- date_from: ISO date string (YYYY-MM-DD)
+- date_to: ISO date string (YYYY-MM-DD)
+- search_text: string (any text to search in content)
 
 Query: {query}
 
-**Status:** Filter search is not yet implemented. This feature will enable:
-- Date-based filtering ("documents from 2023")
-- Category filtering ("papers in quantum computing category")
-- Author filtering ("articles by John Smith")
-- Custom metadata filtering
+Return ONLY valid JSON, no explanation."""
 
-**Current Workaround:** Use vector_search for semantic queries or graph_search for relationship queries."""
+            extraction_response = await self.llm.ainvoke(filter_extraction_prompt)
+
+            # Parse the extracted filters
+            import json
+            try:
+                filters = json.loads(extraction_response.content.strip())
+            except json.JSONDecodeError:
+                # Fallback: use query as text search
+                filters = {"search_text": query}
+
+            # Extract search text and filters
+            search_text = filters.pop("search_text", "") or query
+
+            # Clean filters (remove null values)
+            clean_filters = {k: v for k, v in filters.items() if v is not None}
+
+            # Perform Elasticsearch search
+            results = await elasticsearch_service.search(
+                query=search_text,
+                filters=clean_filters,
+                size=10
+            )
+
+            if results["total"] == 0:
+                return f"❌ No documents found matching the filters.\n\nQuery: {query}\nFilters extracted: {clean_filters}"
+
+            # Format results for LLM context
+            context_parts = [
+                f"🔍 **Filter Search Results** (Found {results['total']} documents)\n",
+                f"**Query**: {query}\n",
+                f"**Filters Applied**: {json.dumps(clean_filters, indent=2)}\n\n"
+            ]
+
+            for idx, doc in enumerate(results["documents"], 1):
+                doc_info = [
+                    f"**[Document {idx}]**",
+                    f"- **Filename**: {doc['filename']}",
+                    f"- **Score**: {doc['score']:.3f}"
+                ]
+
+                if doc.get("author"):
+                    doc_info.append(f"- **Author**: {doc['author']}")
+                if doc.get("document_type"):
+                    doc_info.append(f"- **Type**: {doc['document_type']}")
+                if doc.get("categories"):
+                    doc_info.append(f"- **Categories**: {', '.join(doc['categories'])}")
+                if doc.get("tags"):
+                    doc_info.append(f"- **Tags**: {', '.join(doc['tags'])}")
+                if doc.get("uploaded_at"):
+                    doc_info.append(f"- **Uploaded**: {doc['uploaded_at']}")
+
+                # Add highlights if available
+                if doc.get("highlights"):
+                    doc_info.append(f"- **Highlights**: {' ... '.join(doc['highlights'])}")
+
+                # Add content preview
+                doc_info.append(f"- **Content Preview**: {doc['content_preview']}...")
+
+                context_parts.append("\n".join(doc_info))
+
+            result_text = "\n\n".join(context_parts)
+            logger.info(f"Filter search completed: {results['total']} results")
+            return result_text
+
+        except Exception as e:
+            logger.error(f"Filter search error: {e}", exc_info=True)
+            return f"❌ Filter search error: {str(e)}"
 
     def _setup_tools(self):
         """Setup the 3 retrieval tools with comprehensive descriptions"""
@@ -393,9 +470,9 @@ Query: {query}
 """
             ),
             StructuredTool.from_function(
-                func=self.filter_search_sync,
+                coroutine=self.filter_search_sync,
                 name="filter_search",
-                description="""Metadata-based filtering for precise attribute queries (COMING SOON - Placeholder).
+                description="""Metadata-based filtering for precise attribute queries using Elasticsearch.
 
 **WHEN TO USE (Selection Guidelines):**
 ✓ "Documents from [year/date]", "Files dated...", "Published in..."
@@ -405,22 +482,22 @@ Query: {query}
 ✓ Queries with specific metadata constraints
 ✓ Attribute-based filtering (date, category, author, tags, properties)
 ✓ Precise criteria matching
+✓ Full-text search within metadata-filtered documents
 
 **DO NOT USE for:**
-✗ Semantic searches ("what is X")
-✗ Relationship queries ("how are X and Y related")
-✗ General content searches
+✗ Pure semantic searches without filters (use vector_search)
+✗ Relationship queries ("how are X and Y related" - use graph_search)
 
 **Input:** Query with filter criteria or metadata constraints
-**Returns:** Documents matching the specified filters
+**Returns:** Documents matching the specified filters with relevance scores and highlights
 
-**Note:** This tool is currently a placeholder. For now, use vector_search for content-based queries or graph_search for relationship queries.
-
-**Example queries (future):**
+**Example queries:**
 - "Show me documents about AI from 2023"
 - "Papers in the 'quantum computing' category"
 - "Articles by author John Smith"
 - "Documents tagged as 'research' published after 2022"
+- "Find PDFs uploaded last month"
+- "Search for documents in category 'machine learning'"
 """
             )
         ]
@@ -453,7 +530,9 @@ Use **graph_search** for:
 - Connection or relationship questions
 
 Use **filter_search** for:
-- Date/metadata filtering (placeholder - not yet implemented)
+- Date/metadata filtering ("documents from 2023")
+- Category/tag filtering ("papers in category X")
+- Author filtering ("documents by author Y")
 
 **IMPORTANT:**
 - You have access to {tool_names}
