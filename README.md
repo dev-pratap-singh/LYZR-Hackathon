@@ -304,39 +304,45 @@ Two test datasets are available:
 | Dev Singh Resume | `dev_singh_ai_engineer_qa.csv` | `Dev-Singh-AI-Engineer.pdf` | 44 | 85KB |
 
 **4. Results Tracking**
-- **Automatic saving**: Each test run saves results to `test/results/`
-- **JSON summaries**:
-  - `ragas_summary_YYYY-MM-DD_HH-MM-SS.json` (Harrier EV)
-  - `ragas_dev_singh_summary_YYYY-MM-DD_HH-MM-SS.json` (Dev Singh)
-- **CSV details**: Per-question metrics with timestamps
-- **Latest baselines**:
-  - `ragas_latest_summary.json` (Harrier EV)
-  - `ragas_dev_singh_latest_summary.json` (Dev Singh)
+
+Each test run automatically appends results to single files for easy historical tracking:
+
+**Files:**
+- `test/results/ragas_summary.json` - JSON array of all Harrier EV test runs
+- `test/results/ragas_summary.csv` - CSV with all Harrier EV test runs (one row per run)
+- `test/results/ragas_dev_singh_summary.json` - JSON array of all Dev Singh test runs
+- `test/results/ragas_dev_singh_summary.csv` - CSV with all Dev Singh test runs (one row per run)
 
 **View latest results:**
 ```bash
-# View Harrier EV summary
-cat test/results/ragas_latest_summary.json
+# View most recent Harrier EV test (last entry in JSON array)
+tail -20 test/results/ragas_summary.json
 
-# View Dev Singh resume summary
-cat test/results/ragas_dev_singh_latest_summary.json
+# View most recent Dev Singh test (last entry in JSON array)
+tail -20 test/results/ragas_dev_singh_summary.json
 
-# Analyze detailed per-question results
-head test/results/ragas_detailed_*.csv
-head test/results/ragas_dev_singh_detailed_*.csv
+# View all historical runs in CSV format
+cat test/results/ragas_summary.csv
+cat test/results/ragas_dev_singh_summary.csv
 ```
 
 **Track trends over time:**
 ```python
 import pandas as pd
-import glob
+import json
 
-# Load all historical summaries
-json_files = sorted(glob.glob("test/results/ragas_summary_*.json"))
-summaries = [pd.read_json(f, typ='series') for f in json_files]
-trends = pd.DataFrame(summaries)
+# Load all historical runs from JSON
+with open('test/results/ragas_summary.json') as f:
+    history = json.load(f)  # Array of test runs
 
-# View metric trends
+# Convert to DataFrame for analysis
+trends = pd.DataFrame(history)
+
+# View metric trends over time
+print(trends[['test_date', 'test_time', 'context_precision_mean', 'answer_correctness_mean']])
+
+# Or simply load from CSV
+trends = pd.read_csv('test/results/ragas_summary.csv')
 print(trends[['test_date', 'context_precision_mean', 'answer_correctness_mean']])
 ```
 

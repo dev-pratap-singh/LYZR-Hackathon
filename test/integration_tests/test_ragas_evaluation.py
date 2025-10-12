@@ -206,9 +206,8 @@ class TestRAGASEvaluation:
         )
 
         print(f"\n✓ Results saved successfully!")
-        print(f"  - JSON summary: {saved_paths['json_path']}")
-        print(f"  - CSV details: {saved_paths['csv_path']}")
-        print(f"  - Latest summary: {saved_paths['latest_json_path']}")
+        print(f"  - JSON summary history: {saved_paths['json_path']}")
+        print(f"  - CSV summary history: {saved_paths['csv_path']}")
         print()
 
         # Assert that we have reasonable performance
@@ -401,9 +400,8 @@ class TestRAGASEvaluation:
         )
 
         print(f"\n✓ Results saved successfully!")
-        print(f"  - JSON summary: {saved_paths['json_path']}")
-        print(f"  - CSV details: {saved_paths['csv_path']}")
-        print(f"  - Latest summary: {saved_paths['latest_json_path']}")
+        print(f"  - JSON summary history: {saved_paths['json_path']}")
+        print(f"  - CSV summary history: {saved_paths['csv_path']}")
         print()
 
         # Assert that we have reasonable performance

@@ -53,7 +53,5 @@ htmlcov/
 .pytest_cache/
 test-results.xml
 
-# RAGAS Results - Keep latest summary, ignore historical runs
-test/results/ragas_summary_*.json
-test/results/ragas_detailed_*.csv
-!test/results/ragas_latest_summary.json
+# RAGAS Results - Track all summary files for historical analysis
+# No need to ignore - we want to track ragas_summary.json and ragas_summary.csv

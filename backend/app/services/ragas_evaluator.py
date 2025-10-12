@@ -203,7 +203,8 @@ class RAGASEvaluator:
         prefix: str = "ragas"
     ) -> Dict[str, str]:
         """
-        Save RAGAS evaluation results to JSON and CSV files with timestamps
+        Save RAGAS evaluation results to single JSON and CSV files with timestamps
+        Appends new test runs to existing files for historical tracking
 
         Parameters:
         -----------
@@ -217,52 +218,57 @@ class RAGASEvaluator:
         Returns:
         --------
         Dict with paths to saved files:
-            - json_path: Path to JSON summary file
-            - csv_path: Path to CSV detailed results file
+            - json_path: Path to JSON summary history file
+            - csv_path: Path to CSV summary history file
         """
         try:
             # Create output directory if it doesn't exist
             output_path = Path(output_dir)
             output_path.mkdir(parents=True, exist_ok=True)
 
-            # Generate timestamp for filenames
-            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            # Prepare current test run summary
+            current_run = evaluation_results["summary"].copy()
+            current_run["timestamp"] = datetime.now().isoformat()
+            current_run["test_date"] = datetime.now().strftime("%Y-%m-%d")
+            current_run["test_time"] = datetime.now().strftime("%H:%M:%S")
 
-            # Prepare summary for JSON
-            summary = evaluation_results["summary"].copy()
-            summary["timestamp"] = datetime.now().isoformat()
-            summary["test_date"] = datetime.now().strftime("%Y-%m-%d")
-            summary["test_time"] = datetime.now().strftime("%H:%M:%S")
+            # Save/append to JSON history file
+            json_path = output_path / f"{prefix}_summary.json"
 
-            # Save JSON summary
-            json_filename = f"{prefix}_summary_{timestamp}.json"
-            json_path = output_path / json_filename
+            # Load existing history or create new
+            if json_path.exists():
+                with open(json_path, 'r') as f:
+                    history = json.load(f)
+                    # Ensure it's a list
+                    if not isinstance(history, list):
+                        history = [history]
+            else:
+                history = []
+
+            # Append current run
+            history.append(current_run)
+
+            # Save updated history
             with open(json_path, 'w') as f:
-                json.dump(summary, f, indent=2)
+                json.dump(history, f, indent=2)
             logger.info(f"Saved JSON summary to: {json_path}")
 
-            # Save detailed results to CSV
-            csv_filename = f"{prefix}_detailed_{timestamp}.csv"
-            csv_path = output_path / csv_filename
-            results_df = evaluation_results["results_df"].copy()
+            # Save/append to CSV history file
+            csv_path = output_path / f"{prefix}_summary.csv"
 
-            # Add metadata columns
-            results_df.insert(0, "timestamp", datetime.now().isoformat())
-            results_df.insert(1, "test_date", datetime.now().strftime("%Y-%m-%d"))
+            # Convert current run to DataFrame row
+            current_run_df = pd.DataFrame([current_run])
 
-            results_df.to_csv(csv_path, index=False)
-            logger.info(f"Saved detailed results to: {csv_path}")
-
-            # Also save/update a latest summary file for easy access
-            latest_json_path = output_path / f"{prefix}_latest_summary.json"
-            with open(latest_json_path, 'w') as f:
-                json.dump(summary, f, indent=2)
-            logger.info(f"Updated latest summary: {latest_json_path}")
+            # Append to CSV or create new
+            if csv_path.exists():
+                current_run_df.to_csv(csv_path, mode='a', header=False, index=False)
+            else:
+                current_run_df.to_csv(csv_path, mode='w', header=True, index=False)
+            logger.info(f"Saved CSV summary to: {csv_path}")
 
             return {
                 "json_path": str(json_path),
-                "csv_path": str(csv_path),
-                "latest_json_path": str(latest_json_path)
+                "csv_path": str(csv_path)
             }
 
         except Exception as e:
