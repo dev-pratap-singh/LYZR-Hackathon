@@ -1,0 +1,2 @@
+context_precision_mean,context_recall_mean,retriever_f1_score_mean,answer_correctness_mean,factual_correctness_mean,total_questions,timestamp,test_date,test_time
+0.96249999990375,0.9283333333333333,0.9157828282367102,0.49165511331312606,0.437,40,2025-10-13T06:39:31.155141,2025-10-13,06:39:31

@@ -231,61 +231,85 @@ class GraphRAGPipeline:
     async def process_document(
         self,
         text_content: str,
-        document_id: str
+        document_id: str,
+        enable_multipass: bool = None
     ) -> Dict[str, Any]:
         """
-        Process entire document text and extract complete knowledge graph
-        Uses Microsoft GraphRAG approach: chunk text → extract entities/relationships from each chunk → merge
+        Process entire document text and extract complete knowledge graph with optional multi-pass enrichment
+
+        Multi-pass approach (when enabled):
+        - Pass 1: Initial broad extraction - captures main entities and relationships
+        - Pass 2: Enrichment pass - finds missing entities mentioned in relationships
+        - Pass 3: Relationship enrichment - discovers indirect connections
+
+        Single-pass approach (when disabled):
+        - Traditional: chunk text → extract entities/relationships → merge
 
         Args:
             text_content: Full document text (.txt from Docling or PyMuPDF)
             document_id: Document identifier
+            enable_multipass: Override config setting for multi-pass enrichment
 
         Returns:
-            Dict containing extracted graph data and statistics
+            Dict containing extracted graph data and statistics from all passes
         """
         start_time = time.time()
 
         try:
+            # Determine if multi-pass is enabled
+            use_multipass = enable_multipass if enable_multipass is not None else settings.graphrag_enable_multipass
+            num_passes = settings.graphrag_num_passes if use_multipass else 1
+
             logger.info(f"Starting GraphRAG processing for document {document_id}")
             logger.info(f"Document length: {len(text_content)} characters")
+            logger.info(f"Multi-pass enrichment: {'ENABLED' if use_multipass else 'DISABLED'} ({num_passes} pass(es))")
 
             # Step 1: Chunk the text into smaller pieces (Microsoft GraphRAG approach)
             chunks = self.text_splitter.split_text(text_content)
             logger.info(f"Split document into {len(chunks)} chunks (size: {self.chunk_size}, overlap: {self.chunk_overlap})")
 
-            # Step 2: Process all chunks in parallel with controlled concurrency
-            logger.info(f"Starting parallel processing of {len(chunks)} chunks with concurrency={settings.graphrag_concurrency}")
+            all_passes_entities = []
+            all_passes_relationships = []
+            all_passes_graph_docs = []
 
-            # Initialize results list to preserve order
-            results: List[Optional[Dict[str, Any]]] = [None] * len(chunks)
+            # Process each pass
+            for pass_num in range(1, num_passes + 1):
+                logger.info(f"\n{'='*80}")
+                logger.info(f"PASS {pass_num}/{num_passes}: {self._get_pass_description(pass_num)}")
+                logger.info(f"{'='*80}")
 
-            # Create tasks for all chunks
-            tasks = []
-            for idx, chunk_text in enumerate(chunks):
-                task = asyncio.create_task(
-                    self._process_single_chunk(idx, chunk_text, document_id, results)
+                # For pass 2 and 3, we use existing knowledge to guide extraction
+                extraction_context = None
+                if pass_num > 1 and all_passes_entities:
+                    extraction_context = self._build_extraction_context(
+                        all_passes_entities,
+                        all_passes_relationships,
+                        pass_num
+                    )
+
+                # Process chunks for this pass
+                pass_result = await self._process_single_pass(
+                    chunks=chunks,
+                    document_id=document_id,
+                    pass_number=pass_num,
+                    extraction_context=extraction_context
                 )
-                tasks.append(task)
 
-            # Wait for all tasks to complete
-            await asyncio.gather(*tasks)
+                # Collect results from this pass
+                all_passes_entities.extend(pass_result["entities"])
+                all_passes_relationships.extend(pass_result["relationships"])
+                all_passes_graph_docs.extend(pass_result["graph_documents"])
 
-            # Step 3: Collect results from all chunks
-            all_entities = []
-            all_relationships = []
-            all_graph_docs = []
+                logger.info(
+                    f"Pass {pass_num} complete: "
+                    f"{len(pass_result['entities'])} new entities, "
+                    f"{len(pass_result['relationships'])} new relationships"
+                )
 
-            for result in results:
-                if result is not None:
-                    all_graph_docs.append(result["graph_doc"])
-                    all_entities.extend(result["entities"])
-                    all_relationships.extend(result["relationships"])
-
-            # Step 4: Deduplicate entities and relationships
-            # Entities with same ID are merged (keeps first occurrence)
+            # Final deduplication across all passes
+            logger.info("\nPerforming final deduplication across all passes...")
             unique_entities = {}
-            for entity in all_entities:
+            for entity in all_passes_entities:
                 entity_id = entity["id"]
                 if entity_id not in unique_entities:
                     unique_entities[entity_id] = entity
@@ -293,12 +317,16 @@ class GraphRAGPipeline:
                     # Merge descriptions if available
                     existing = unique_entities[entity_id]
                     if "description" in entity.get("properties", {}):
-                        if "description" not in existing.get("properties", {}):
-                            existing["properties"]["description"] = entity["properties"]["description"]
+                        existing_desc = existing.get("properties", {}).get("description", "")
+                        new_desc = entity["properties"]["description"]
+                        # Append new description if different
+                        if new_desc and new_desc not in existing_desc:
+                            combined_desc = f"{existing_desc}; {new_desc}" if existing_desc else new_desc
+                            existing["properties"]["description"] = combined_desc
 
             # Deduplicate relationships (same source-target-type)
             unique_relationships = {}
-            for rel in all_relationships:
+            for rel in all_passes_relationships:
                 rel_key = f"{rel['source']}-{rel['type']}-{rel['target']}"
                 if rel_key not in unique_relationships:
                     unique_relationships[rel_key] = rel
@@ -315,21 +343,128 @@ class GraphRAGPipeline:
                 "entities_count": len(final_entities),
                 "relationships_count": len(final_relationships),
                 "chunks_processed": len(chunks),
+                "num_passes": num_passes,
                 "processing_time": processing_time,
-                "graph_documents": all_graph_docs  # All graph documents for Neo4j import
+                "graph_documents": all_passes_graph_docs  # All graph documents for Neo4j import
             }
 
             logger.info(
-                f"GraphRAG processing complete for {document_id}: "
-                f"{len(final_entities)} entities, {len(final_relationships)} relationships "
-                f"from {len(chunks)} chunks in {processing_time}s"
+                f"\n{'='*80}"
             )
+            logger.info(
+                f"GraphRAG processing complete for {document_id}: "
+                f"{len(final_entities)} total entities, {len(final_relationships)} total relationships "
+                f"from {len(chunks)} chunks across {num_passes} pass(es) in {processing_time}s"
+            )
+            logger.info(f"{'='*80}\n")
 
             return result
 
         except Exception as e:
             logger.error(f"Error processing document {document_id} with GraphRAG: {e}", exc_info=True)
             raise
+
+    def _get_pass_description(self, pass_num: int) -> str:
+        """Get description for each pass"""
+        descriptions = {
+            1: "Initial Extraction - Broad entity and relationship discovery",
+            2: "Enrichment Pass - Finding missing entities and connections",
+            3: "Relationship Enhancement - Discovering indirect relationships"
+        }
+        return descriptions.get(pass_num, f"Pass {pass_num}")
+
+    def _build_extraction_context(
+        self,
+        existing_entities: List[Dict],
+        existing_relationships: List[Dict],
+        pass_num: int
+    ) -> str:
+        """
+        Build context string to guide subsequent extraction passes
+
+        Args:
+            existing_entities: Entities found in previous passes
+            existing_relationships: Relationships found in previous passes
+            pass_num: Current pass number
+
+        Returns:
+            Context string for LLM
+        """
+        # Get unique entity names (limit to top 50 most frequent)
+        entity_names = set()
+        for entity in existing_entities[:50]:
+            entity_names.add(entity["id"])
+
+        context = f"\nPrevious Pass Information:\n"
+        context += f"- Known entities: {', '.join(list(entity_names)[:30])}"
+
+        if pass_num == 2:
+            context += "\n- Focus: Find entities that are referenced but not yet extracted"
+            context += "\n- Look for: Missing people, organizations, locations, concepts"
+        elif pass_num == 3:
+            context += "\n- Focus: Discover relationships between existing entities"
+            context += "\n- Look for: Indirect connections, inferred relationships, contextual links"
+
+        return context
+
+    async def _process_single_pass(
+        self,
+        chunks: List[str],
+        document_id: str,
+        pass_number: int,
+        extraction_context: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Process all chunks for a single pass
+
+        Args:
+            chunks: List of text chunks
+            document_id: Document identifier
+            pass_number: Current pass number
+            extraction_context: Optional context from previous passes
+
+        Returns:
+            Dict with entities, relationships, and graph documents from this pass
+        """
+        logger.info(f"Starting parallel processing of {len(chunks)} chunks with concurrency={settings.graphrag_concurrency}")
+
+        # Initialize results list to preserve order
+        results: List[Optional[Dict[str, Any]]] = [None] * len(chunks)
+
+        # Create tasks for all chunks
+        tasks = []
+        for idx, chunk_text in enumerate(chunks):
+            # Add context for enrichment passes
+            if extraction_context and pass_number > 1:
+                chunk_with_context = f"{extraction_context}\n\n{chunk_text}"
+            else:
+                chunk_with_context = chunk_text
+
+            task = asyncio.create_task(
+                self._process_single_chunk(idx, chunk_with_context, document_id, results)
+            )
+            tasks.append(task)
+
+        # Wait for all tasks to complete
+        await asyncio.gather(*tasks)
+
+        # Collect results from all chunks
+        all_entities = []
+        all_relationships = []
+        all_graph_docs = []
+
+        for result in results:
+            if result is not None:
+                all_graph_docs.append(result["graph_doc"])
+                all_entities.extend(result["entities"])
+                all_relationships.extend(result["relationships"])
+
+        return {
+            "entities": all_entities,
+            "relationships": all_relationships,
+            "graph_documents": all_graph_docs,
+            "pass_number": pass_number
+        }
 
     async def process_chunks(
         self,

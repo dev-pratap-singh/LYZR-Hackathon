@@ -1,0 +1,13 @@
+[
+  {
+    "context_precision_mean": 0.96249999990375,
+    "context_recall_mean": 0.9283333333333333,
+    "retriever_f1_score_mean": 0.9157828282367102,
+    "answer_correctness_mean": 0.49165511331312606,
+    "factual_correctness_mean": 0.437,
+    "total_questions": 40,
+    "timestamp": "2025-10-13T06:39:31.155141",
+    "test_date": "2025-10-13",
+    "test_time": "06:39:31"
+  }
+]

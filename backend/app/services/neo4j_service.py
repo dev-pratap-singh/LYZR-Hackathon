@@ -117,51 +117,117 @@ class Neo4jService:
     async def import_graph_documents(
         self,
         graph_documents: List[GraphDocument],
-        document_id: str
+        document_id: str,
+        pass_number: int = 1
     ):
         """
-        Import graph documents into Neo4j using LangChain
+        Import graph documents into Neo4j using MERGE for deduplication
 
         Args:
             graph_documents: List of GraphDocument objects from LLMGraphTransformer
             document_id: Document identifier
+            pass_number: Which pass this is (1, 2, or 3) for multi-pass enrichment
         """
         try:
-            logger.info(f"Importing {len(graph_documents)} graph documents for document {document_id}")
+            logger.info(f"Importing {len(graph_documents)} graph documents for document {document_id} (Pass {pass_number})")
 
             # Create document node first
             self.graph.query(
                 """
                 MERGE (d:__Document__ {id: $document_id})
-                SET d.imported_at = datetime()
+                SET d.imported_at = datetime(),
+                    d.last_updated_pass = $pass_number
                 """,
-                params={"document_id": document_id}
+                params={"document_id": document_id, "pass_number": pass_number}
             )
 
             # Import graph documents using LangChain's add_graph_documents
-            # This handles nodes, relationships, and metadata
+            # This uses MERGE internally to avoid duplicates
             self.graph.add_graph_documents(
                 graph_documents,
                 baseEntityLabel=True,
                 include_source=True
             )
 
-            # Link entities to document
+            # Link entities to document if not already linked
             self.graph.query(
                 """
                 MATCH (d:__Document__ {id: $document_id})
                 MATCH (e:__Entity__)
                 WHERE NOT (e)-[:BELONGS_TO]->(:__Document__)
                 MERGE (e)-[:BELONGS_TO]->(d)
+                SET e.discovery_pass = COALESCE(e.discovery_pass, $pass_number)
                 """,
-                params={"document_id": document_id}
+                params={"document_id": document_id, "pass_number": pass_number}
             )
 
-            logger.info(f"Graph documents imported successfully for {document_id}")
+            # Update entity metadata for tracking enrichment passes
+            self.graph.query(
+                """
+                MATCH (e:__Entity__)-[:BELONGS_TO]->(d:__Document__ {id: $document_id})
+                SET e.last_enriched_pass = $pass_number
+                """,
+                params={"document_id": document_id, "pass_number": pass_number}
+            )
+
+            logger.info(f"Graph documents imported successfully for {document_id} (Pass {pass_number})")
 
         except Exception as e:
             logger.error(f"Error importing graph documents: {e}")
             raise
+
+    async def merge_similar_entities(
+        self,
+        document_id: str,
+        similarity_threshold: float = 0.85
+    ):
+        """
+        Merge entities that are likely duplicates based on name similarity
+
+        This helps consolidate entities that might have been extracted with
+        slightly different names across multiple passes
+
+        Args:
+            document_id: Document identifier
+            similarity_threshold: Minimum similarity score to consider merging (0.0-1.0)
+        """
+        try:
+            logger.info(f"Merging similar entities for document {document_id}")
+
+            # Find potential duplicates using Levenshtein distance or simple matching
+            cypher = """
+            MATCH (e1:__Entity__)-[:BELONGS_TO]->(d:__Document__ {id: $document_id})
+            MATCH (e2:__Entity__)-[:BELONGS_TO]->(d)
+            WHERE e1.id < e2.id
+            AND (
+                toLower(e1.id) = toLower(e2.id)
+                OR e1.id CONTAINS e2.id
+                OR e2.id CONTAINS e1.id
+            )
+            WITH e1, e2
+            // Merge relationships from e2 to e1
+            OPTIONAL MATCH (e2)-[r]-(other:__Entity__)
+            WHERE other <> e1
+            MERGE (e1)-[r2:rel_type(r)]-(other)
+            ON CREATE SET r2 = properties(r)
+            // Delete e2 and its relationships
+            WITH e1, e2
+            DETACH DELETE e2
+            RETURN count(e2) as merged_count
+            """
+
+            result = self.graph.query(cypher, params={
+                "document_id": document_id
+            })
+
+            merged_count = result[0]["merged_count"] if result else 0
+            logger.info(f"Merged {merged_count} duplicate entities for document {document_id}")
+
+            return merged_count
+
+        except Exception as e:
+            logger.error(f"Error merging similar entities: {e}")
+            return 0
 
     async def get_entity_count(self, document_id: str = None) -> int:
         """Get count of entities, optionally filtered by document"""

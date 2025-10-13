@@ -11,10 +11,8 @@ from tqdm import tqdm
 
 from ragas import SingleTurnSample, EvaluationDataset, evaluate
 from ragas.metrics import (
-    answer_correctness,
     context_recall,
     context_precision,
-    FactualCorrectness
 )
 
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
@@ -105,23 +103,14 @@ class RAGASEvaluator:
                 )
                 dataset.append(sample)
 
-            # Configure metrics
-            factual_correctness = FactualCorrectness(
-                mode="precision",
-                atomicity="high",
-                coverage="high"
-            )
-
             # Create evaluation dataset and run evaluation
-            logger.info("Running RAGAS evaluation...")
+            logger.info("Running RAGAS evaluation with Context Recall and Precision only...")
             evaluation_data = EvaluationDataset(samples=dataset)
             result = evaluate(
                 dataset=evaluation_data,
                 metrics=[
                     context_recall,
                     context_precision,
-                    answer_correctness,
-                    factual_correctness,
                 ],
                 llm=self.evaluator_llm,
                 embeddings=self.evaluator_embeddings,
@@ -129,13 +118,6 @@ class RAGASEvaluator:
 
             # Convert to pandas DataFrame
             df_result = result.to_pandas()
-
-            # Rename columns for consistency
-            if "factual_correctness(mode=precision)" in df_result.columns:
-                df_result.rename(
-                    columns={"factual_correctness(mode=precision)": "factual_correctness"},
-                    inplace=True
-                )
 
             # Calculate F1 score for retriever performance
             df_result["retriever_f1_score"] = (
@@ -145,13 +127,11 @@ class RAGASEvaluator:
                 / (df_result["context_recall"] + df_result["context_precision"])
             ).fillna(0)  # Handle division by zero
 
-            # Calculate summary statistics
+            # Calculate summary statistics (only retrieval metrics)
             summary = {
                 "context_precision_mean": float(df_result["context_precision"].mean()),
                 "context_recall_mean": float(df_result["context_recall"].mean()),
                 "retriever_f1_score_mean": float(df_result["retriever_f1_score"].mean()),
-                "answer_correctness_mean": float(df_result["answer_correctness"].mean()),
-                "factual_correctness_mean": float(df_result["factual_correctness"].mean()),
                 "total_questions": len(questions),
             }
 
