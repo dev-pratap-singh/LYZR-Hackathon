@@ -100,7 +100,8 @@ class EnhancedStreamingCallback(AsyncCallbackHandler):
         tool_icons = {
             "vector_search": "📚",
             "graph_search": "🕸️",
-            "filter_search": "🔍"
+            "filter_search": "🔍",
+            "graph_update": "✏️"
         }
 
         icon = tool_icons.get(tool_name, "🔧")
@@ -126,6 +127,18 @@ class EnhancedStreamingCallback(AsyncCallbackHandler):
                 "output_length": len(output)
             }
         )
+
+        # If this was a graph update, emit a special event to notify frontend to refresh graph
+        if self.current_tool == "graph_update" and "✅" in output:
+            await self.emit_event(
+                "graph_updated",
+                "🔄 Knowledge graph has been updated. Refresh the graph view to see changes.",
+                {
+                    "tool_name": "graph_update",
+                    "update_successful": True,
+                    "output_preview": output[:500]
+                }
+            )
 
     async def on_tool_error(self, error: Exception, **kwargs):
         """Called when a tool encounters an error"""
@@ -550,8 +563,168 @@ Return ONLY valid JSON, no explanation."""
             logger.error(f"Filter search error: {e}", exc_info=True)
             return f"❌ Filter search error: {str(e)}"
 
+    async def graph_update_sync(self, query: str) -> str:
+        """
+        Execute graph update operations using natural language
+
+        This method parses natural language update commands and performs
+        operations on the knowledge graph (delete nodes, merge nodes, update properties, etc.)
+        """
+        try:
+            logger.info(f"Graph update tool called with query: {query[:100]}")
+
+            # Use LLM to extract update operation from natural language
+            update_extraction_prompt = f"""Parse this graph update query and return a JSON object with the operation details.
+
+Supported operations:
+1. create_node: {{"operation": "create_node", "node_id": "entity name", "node_type": "Entity", "description": "description"}}
+2. create_node_with_relationships: {{"operation": "create_node_with_relationships", "node_id": "new entity", "node_type": "Entity", "description": "description", "relationships": [{{"target_id": "existing entity", "relationship_type": "TYPE", "direction": "outgoing"}}]}}
+3. delete_node: {{"operation": "delete_node", "node_id": "entity name"}}
+4. merge_nodes: {{"operation": "merge_nodes", "node_id1": "first entity", "node_id2": "second entity", "new_node_id": "optional new name"}}
+5. create_relationship: {{"operation": "create_relationship", "source_id": "source entity", "target_id": "target entity", "relationship_type": "TYPE", "properties": {{"key": "value"}}}}
+6. update_node_property: {{"operation": "update_node_property", "node_id": "entity name", "property_name": "property", "property_value": "new value"}}
+7. update_node_description: {{"operation": "update_node_description", "node_id": "entity name", "description": "new description"}}
+8. update_relationship: {{"operation": "update_relationship", "source_id": "source", "target_id": "target", "relationship_type": "TYPE", "properties": {{"key": "value"}}}}
+9. delete_relationship: {{"operation": "delete_relationship", "source_id": "source", "target_id": "target", "relationship_type": "TYPE"}}
+
+IMPORTANT:
+- If the query wants to create a NEW node and connect it to MULTIPLE existing nodes, use "create_node_with_relationships" operation
+- The "relationships" array should contain ALL the connections to make
+- Each relationship needs: target_id, relationship_type, and direction ("outgoing" or "incoming")
+- direction="outgoing" means: new_node -> target
+- direction="incoming" means: target -> new_node
+
+Example for creating "Software Engineering" and connecting to multiple nodes:
+{{
+  "operation": "create_node_with_relationships",
+  "node_id": "Software Engineering",
+  "node_type": "Concept",
+  "description": "Software Engineering discipline",
+  "relationships": [
+    {{"target_id": "Problem-Solving", "relationship_type": "REQUIRES", "direction": "outgoing"}},
+    {{"target_id": "Python", "relationship_type": "USES", "direction": "outgoing"}},
+    {{"target_id": "Clickhouse", "relationship_type": "USES", "direction": "outgoing"}}
+  ]
+}}
+
+Query: {query}
+
+Return ONLY valid JSON with the operation details, no explanation."""
+
+            extraction_response = await self.llm.ainvoke(update_extraction_prompt)
+
+            # Parse the extracted operation
+            import json
+            try:
+                operation = json.loads(extraction_response.content.strip())
+            except json.JSONDecodeError:
+                return f"❌ Could not parse update operation from query: {query}"
+
+            operation_type = operation.get("operation")
+            if not operation_type:
+                return f"❌ No valid operation found in query: {query}"
+
+            # Execute the operation using neo4j_service
+            result = None
+
+            if operation_type == "create_node":
+                result = await neo4j_service.create_node(
+                    node_id=operation.get("node_id"),
+                    node_type=operation.get("node_type", "Entity"),
+                    description=operation.get("description", ""),
+                    properties=operation.get("properties", {}),
+                    document_id=self.current_document_id
+                )
+
+            elif operation_type == "create_node_with_relationships":
+                result = await neo4j_service.create_node_with_relationships(
+                    node_id=operation.get("node_id"),
+                    node_type=operation.get("node_type", "Entity"),
+                    description=operation.get("description", ""),
+                    relationships=operation.get("relationships", []),
+                    document_id=self.current_document_id
+                )
+
+            elif operation_type == "delete_node":
+                result = await neo4j_service.delete_node(
+                    node_id=operation.get("node_id"),
+                    document_id=self.current_document_id
+                )
+
+            elif operation_type == "merge_nodes":
+                result = await neo4j_service.merge_nodes(
+                    node_id1=operation.get("node_id1"),
+                    node_id2=operation.get("node_id2"),
+                    new_node_id=operation.get("new_node_id"),
+                    document_id=self.current_document_id
+                )
+
+            elif operation_type == "create_relationship":
+                result = await neo4j_service.create_relationship(
+                    source_id=operation.get("source_id"),
+                    target_id=operation.get("target_id"),
+                    relationship_type=operation.get("relationship_type"),
+                    properties=operation.get("properties", {}),
+                    document_id=self.current_document_id
+                )
+
+            elif operation_type == "update_node_property":
+                result = await neo4j_service.update_node_property(
+                    node_id=operation.get("node_id"),
+                    property_name=operation.get("property_name"),
+                    property_value=operation.get("property_value"),
+                    document_id=self.current_document_id
+                )
+
+            elif operation_type == "update_node_description":
+                result = await neo4j_service.update_node_description(
+                    node_id=operation.get("node_id"),
+                    description=operation.get("description"),
+                    document_id=self.current_document_id
+                )
+
+            elif operation_type == "update_relationship":
+                result = await neo4j_service.update_relationship(
+                    source_id=operation.get("source_id"),
+                    target_id=operation.get("target_id"),
+                    relationship_type=operation.get("relationship_type"),
+                    properties=operation.get("properties", {}),
+                    document_id=self.current_document_id
+                )
+
+            elif operation_type == "delete_relationship":
+                result = await neo4j_service.delete_relationship(
+                    source_id=operation.get("source_id"),
+                    target_id=operation.get("target_id"),
+                    relationship_type=operation.get("relationship_type"),
+                    document_id=self.current_document_id
+                )
+
+            else:
+                return f"❌ Unsupported operation: {operation_type}"
+
+            # Format the result
+            if result and result.get("success"):
+                formatted_result = f"✅ **Graph Update Successful**\n\n"
+                formatted_result += f"**Operation**: {operation_type}\n"
+                formatted_result += f"**Details**:\n"
+                formatted_result += json.dumps(result, indent=2)
+                logger.info(f"Graph update completed successfully: {operation_type}")
+                return formatted_result
+            else:
+                error_msg = result.get("error", "Unknown error") if result else "Operation failed"
+                formatted_result = f"❌ **Graph Update Failed**\n\n"
+                formatted_result += f"**Operation**: {operation_type}\n"
+                formatted_result += f"**Error**: {error_msg}\n"
+                logger.error(f"Graph update failed: {error_msg}")
+                return formatted_result
+
+        except Exception as e:
+            logger.error(f"Graph update error: {e}", exc_info=True)
+            return f"❌ Graph update error: {str(e)}"
+
     def _setup_tools(self):
-        """Setup the 3 retrieval tools with comprehensive descriptions"""
+        """Setup the 4 tools: vector search, graph search, filter search, and graph update"""
 
         self.tools = [
             StructuredTool.from_function(
@@ -572,6 +745,7 @@ Return ONLY valid JSON, no explanation."""
 ✗ Relationship queries ("how are X and Y related")
 ✗ Date/metadata filtering ("documents from 2023")
 ✗ Connection analysis ("what connects X to Y")
+✗ Graph updates (use graph_update)
 
 **Input:** Natural language query string
 **Returns:** Top relevant document passages with relevance scores
@@ -612,6 +786,7 @@ Return ONLY valid JSON, no explanation."""
 **DO NOT USE for:**
 ✗ Metadata filtering ("documents from 2023") - use filter_search
 ✗ Pure content retrieval without entity focus - use vector_search
+✗ Graph updates (use graph_update)
 
 **Input:** Query about entities, relationships, or connections
 **Returns:** Comprehensive graph analysis with:
@@ -648,6 +823,7 @@ Return ONLY valid JSON, no explanation."""
 **DO NOT USE for:**
 ✗ Pure semantic searches without filters (use vector_search)
 ✗ Relationship queries ("how are X and Y related" - use graph_search)
+✗ Graph updates (use graph_update)
 
 **Input:** Query with filter criteria or metadata constraints
 **Returns:** Documents matching the specified filters with relevance scores and highlights
@@ -660,6 +836,53 @@ Return ONLY valid JSON, no explanation."""
 - "Find PDFs uploaded last month"
 - "Search for documents in category 'machine learning'"
 """
+            ),
+            StructuredTool.from_function(
+                coroutine=self.graph_update_sync,
+                name="graph_update",
+                description="""Update, modify, create, or delete nodes and relationships in the knowledge graph using natural language commands.
+
+**WHEN TO USE (Selection Guidelines):**
+✓ "Create a new node X", "Add entity Y"
+✓ "Create X and connect it to Y, Z, A", "Add node X and link to multiple nodes"
+✓ "Delete node X", "Remove entity Y"
+✓ "Merge nodes X and Y", "Combine entities A and B"
+✓ "Connect X to Y", "Create relationship between A and B"
+✓ "Update node X property/description", "Change entity Y's [property] to [value]"
+✓ "Update the relationship between X and Y"
+✓ "Delete the relationship/edge between A and B"
+✓ ANY query asking to create, modify, update, change, delete, merge, or connect graph elements
+
+**SUPPORTED OPERATIONS:**
+1. Create Node: Add a new entity to the graph
+2. Create Node with Relationships: Add a new entity and connect it to multiple existing nodes (EFFICIENT FOR BULK CONNECTIONS)
+3. Delete Node: Remove an entity from the graph
+4. Merge Nodes: Combine two entities into one, preserving relationships
+5. Create Relationship: Add a new connection between two entities
+6. Update Node Property: Change a specific property value
+7. Update Node Description: Modify the description of an entity
+8. Update Relationship: Modify relationship properties
+9. Delete Relationship: Remove a connection between entities
+
+**DO NOT USE for:**
+✗ Reading/searching graph data (use graph_search)
+✗ Content search (use vector_search)
+✗ Metadata filtering (use filter_search)
+
+**Input:** Natural language command describing the update operation
+**Returns:** Success/failure status with details of the graph update
+
+**Example queries:**
+- "Create a new node called 'Software Engineering'"
+- "Create 'Software Engineering' and connect it to Python, Java, and C++"
+- "Add a new entity 'Machine Learning' and link it to AI, Python, and Data Science"
+- "Delete the node named 'Machine Learning'"
+- "Merge 'AI' and 'Artificial Intelligence' into one node"
+- "Create a relationship 'WORKS_ON' from John to Project X"
+- "Update the description of 'Python' to 'A popular programming language'"
+- "Change the 'status' property of 'Project A' to 'completed'"
+- "Delete the relationship between 'Dev' and 'Company Y'"
+"""
             )
         ]
 
@@ -668,16 +891,24 @@ Return ONLY valid JSON, no explanation."""
     def _setup_agent(self):
         """Setup LangChain agent with comprehensive system prompt"""
 
-        system_prompt = """You are an AI assistant that helps users find information from their UPLOADED DOCUMENTS.
+        system_prompt = """You are an AI assistant that helps users find information from their UPLOADED DOCUMENTS and manage the knowledge graph.
 
 **CRITICAL RULES:**
 
 1. The user has uploaded documents. You MUST search these documents using your tools.
-2. For EVERY question, you MUST call one of your search tools BEFORE answering.
+2. For EVERY question, you MUST call one of your tools BEFORE answering.
 3. NEVER answer from your own knowledge - ALWAYS search the uploaded documents first.
 4. DO NOT just describe what you will do - ACTUALLY CALL THE TOOL.
 
 **Tool Selection:**
+
+Use **graph_update** for:
+- "Delete node/entity X", "Remove X from the graph"
+- "Merge X and Y", "Combine entities A and B"
+- "Connect X to Y", "Create relationship between A and B"
+- "Update/Change X's description/property", "Modify entity Y"
+- "Delete the relationship between X and Y"
+- ANY query asking to modify, update, change, delete, merge, or connect graph elements
 
 Use **graph_search** for:
 - "Tell me about X", "Who is X", "What is X" - when X is a person or entity
@@ -685,6 +916,7 @@ Use **graph_search** for:
 - "What's the relationship between..."
 - Connection or relationship questions
 - ANY query where user says "use graph search" or "graph search only"
+- Reading/exploring the knowledge graph
 
 Use **vector_search** for:
 - General "what/why/how" questions about concepts or topics
@@ -702,6 +934,7 @@ Use **filter_search** for:
 - You MUST use these tools - they are not optional
 - Call the appropriate tool IMMEDIATELY, don't just talk about calling it
 - After getting tool results, synthesize a clear answer citing the passages
+- For graph updates, ALWAYS report the result to the user clearly
 
 **ANSWER FORMATTING RULES:**
 

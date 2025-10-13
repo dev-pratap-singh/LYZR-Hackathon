@@ -5,7 +5,7 @@ import axios from 'axios';
 
 const API_URL = 'http://localhost:8000';
 
-const GraphVisualization = () => {
+const GraphVisualization = ({ refreshTrigger = 0 }) => {
   const [nodes, setNodes] = useState([]);
   const [edges, setEdges] = useState([]);
   const [selectedNode, setSelectedNode] = useState(null);
@@ -27,6 +27,14 @@ const GraphVisualization = () => {
   useEffect(() => {
     fetchGraphData();
   }, []);
+
+  // Refetch graph data when refreshTrigger changes (after graph updates)
+  useEffect(() => {
+    if (refreshTrigger > 0) {
+      console.log('Graph update detected, refreshing graph data...');
+      fetchGraphData();
+    }
+  }, [refreshTrigger]);
 
   // ESC key to exit fullscreen
   useEffect(() => {
@@ -103,9 +111,32 @@ const GraphVisualization = () => {
       node.radius = getNodeRadius(node);
     });
 
+    // Create node ID set for fast lookup
+    const nodeIds = new Set(nodes.map(n => n.id));
+
+    // Filter out edges with missing source or target nodes
+    const validEdges = edges.filter(e => {
+      const hasSource = nodeIds.has(e.source);
+      const hasTarget = nodeIds.has(e.target);
+
+      if (!hasSource || !hasTarget) {
+        console.warn(`⚠️ Skipping orphaned edge: ${e.source} -> ${e.target} (${e.type})`);
+        if (!hasSource) console.warn(`  Missing source node: ${e.source}`);
+        if (!hasTarget) console.warn(`  Missing target node: ${e.target}`);
+      }
+
+      return hasSource && hasTarget;
+    });
+
+    // Log summary if edges were filtered
+    if (validEdges.length < edges.length) {
+      console.warn(`⚠️ Graph Data Integrity Issue: ${edges.length - validEdges.length} orphaned edges filtered out`);
+      console.warn('💡 Tip: These edges reference nodes that don\'t exist. Consider cleaning up your graph database.');
+    }
+
     // Create force simulation - adjusted for dynamic node sizes and spacing
     const simulation = d3.forceSimulation(nodes)
-      .force('link', d3.forceLink(edges.map(e => ({
+      .force('link', d3.forceLink(validEdges.map(e => ({
         source: nodes.find(n => n.id === e.source),
         target: nodes.find(n => n.id === e.target),
         ...e
@@ -120,7 +151,7 @@ const GraphVisualization = () => {
     const defs = svg.append('defs');
 
     // Get unique edge types for different colored arrows
-    const edgeTypes = [...new Set(edges.map(e => e.type))];
+    const edgeTypes = [...new Set(validEdges.map(e => e.type))];
     edgeTypes.forEach((type, index) => {
       const color = d3.schemeCategory10[index % 10];
       defs.append('marker')
@@ -136,10 +167,10 @@ const GraphVisualization = () => {
         .attr('fill', color);
     });
 
-    // Draw edges
+    // Draw edges (using validEdges to exclude orphaned relationships)
     const link = g.append('g')
       .selectAll('g')
-      .data(edges)
+      .data(validEdges)
       .join('g');
 
     const linkLine = link.append('line')

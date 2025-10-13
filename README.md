@@ -4,13 +4,21 @@ An intelligent Retrieval-Augmented Generation (RAG) system that combines vector 
 
 **Status**: ✅ **Production Ready**
 
-**Version**: 1.1.0
+**Version**: 1.2.0
 
 ---
 
-## 🎉 What's New in v1.1.0
+## 🎉 What's New in v1.2.0
 
-### Enhanced Graph Capabilities
+### 🆕 Natural Language Graph Updates (v1.2.0)
+- **✏️ Graph Update Tool**: NEW 4th tool added to search agent for real-time graph modifications
+- **🎯 9 Update Operations**: Create nodes, merge entities, update properties, manage relationships
+- **🗣️ Natural Language Commands**: "Create X and connect to Y, Z" - no Cypher needed!
+- **⚡ Batch Operations**: Create node + connect to multiple entities in ONE operation
+- **🔄 Auto-Refresh**: Frontend automatically updates graph visualization after changes
+- **📊 Detailed Feedback**: Shows successful vs failed operations with clear error messages
+
+### Enhanced Graph Capabilities (v1.1.0)
 - **🕸️ Multi-Hop Graph Traversal**: 1-hop and 2-hop relationship exploration with direction tracking
 - **🔄 3-Pass Graph Enrichment**: 30-50% richer knowledge graphs through intelligent multi-pass extraction
 - **📊 Graph Statistics**: Comprehensive network analysis for each entity
@@ -92,6 +100,13 @@ The intelligent search agent automatically analyzes query intent and selects the
   - Full-text search with fuzzy matching
   - Date ranges, categories, tags, and custom filters
 
+- **Graph Update** ✨ NEW in v1.2.0: "Create X and connect to Y", "Delete node Z"
+  - Real-time knowledge graph modifications using natural language
+  - 9 powerful operations: Create, Delete, Merge, Update, Connect
+  - Batch operations for efficiency (create + connect multiple nodes at once)
+  - Automatic frontend refresh after updates
+  - No Cypher knowledge required - just use plain English!
+
 #### MAX_PERFORMANCE Mode
 
 **NEW in v1.1.0**: Toggle between standard and max performance modes:
@@ -126,6 +141,108 @@ The intelligent search agent automatically analyzes query intent and selects the
 ```env
 GRAPHRAG_ENABLE_MULTIPASS=true  # Enable 3-pass enrichment
 GRAPHRAG_NUM_PASSES=3            # Number of passes (1-3 recommended)
+```
+
+### ✅ Natural Language Graph Updates ✨ NEW in v1.2.0
+
+**Modify your knowledge graph using plain English commands!** No Cypher knowledge required.
+
+#### Supported Operations
+
+1. **Create New Node**
+   ```
+   "Create a new node called 'Data Science'"
+   ```
+
+2. **Create Node with Multiple Connections** (Batch Operation)
+   ```
+   "Create 'Software Engineering' and connect it to Python, Java, TypeScript, and Docker"
+   ```
+   - Creates the node and all connections in ONE efficient operation
+   - Shows which connections succeeded vs failed
+   - Perfect for building complex graph structures quickly
+
+3. **Delete Node**
+   ```
+   "Delete the node named 'Machine Learning'"
+   "Remove entity 'Python' from the graph"
+   ```
+
+4. **Merge Nodes**
+   ```
+   "Merge 'AI' and 'Artificial Intelligence' into one node"
+   "Combine entities 'John' and 'John Smith'"
+   ```
+   - Preserves all relationships from both nodes
+   - Optionally rename the merged entity
+
+5. **Create Relationship**
+   ```
+   "Create a relationship 'WORKS_ON' from John to Project X"
+   "Connect Dev Singh to LYZR with relationship 'EMPLOYED_AT'"
+   ```
+
+6. **Update Node Properties**
+   ```
+   "Update the description of 'Python' to 'A popular programming language'"
+   "Change the status property of 'Project A' to 'completed'"
+   ```
+
+7. **Update Node Description**
+   ```
+   "Update the description of 'Machine Learning' to include deep learning"
+   ```
+
+8. **Update Relationship**
+   ```
+   "Update the 'EMPLOYED_AT' relationship between John and Google to add 'since: 2020'"
+   ```
+
+9. **Delete Relationship**
+   ```
+   "Delete the relationship between 'Dev' and 'Company Y'"
+   "Remove the connection between 'AI' and 'Machine Learning'"
+   ```
+
+#### How It Works
+
+```
+User: "Create 'AI Research' and connect it to Python, Machine Learning, and Statistics"
+         ↓
+Agent detects graph update intent
+         ↓
+LLM extracts operation details:
+- Operation: create_node_with_relationships
+- Node: "AI Research"
+- Connections: ["Python", "Machine Learning", "Statistics"]
+         ↓
+Neo4j executes in single transaction
+         ↓
+Frontend auto-refreshes graph
+         ↓
+User sees updated graph + success message
+```
+
+#### Real-Time Feedback
+
+The system provides detailed feedback for each operation:
+
+```
+✅ Graph Update Successful
+
+Operation: create_node_with_relationships
+Node created: Software Engineering
+Relationships created: 9
+Relationships failed: 0
+
+✓ Successful connections:
+  - Problem-Solving (INCLUDES, outgoing)
+  - Clickhouse (INCLUDES, outgoing)
+  - Leadership (INCLUDES, outgoing)
+  ... and 6 more
+
+🔄 Knowledge graph has been updated.
+   Refresh the graph view to see changes.
 ```
 
 ### ✅ Enhanced Entity Analysis
@@ -1014,6 +1131,9 @@ POST /api/rag/documents/{id}/process-graph
 # Get graph statistics (includes multi-pass info)
 GET /api/rag/graph/stats/{id}
 
+# Get full graph data for visualization
+GET /api/rag/graph/data?document_id={id}
+
 # List entities (with discovery_pass and enrichment info)
 GET /api/rag/graph/entities?document_id={id}&limit=50
 
@@ -1022,6 +1142,46 @@ GET /api/rag/graph/relationships?document_id={id}&limit=50
 
 # Get entity with context (NEW in v1.1.0 - multi-hop traversal)
 GET /api/rag/graph/entities/{entity_id}?document_id={id}
+```
+
+### Graph Updates ✨ NEW in v1.2.0
+
+```bash
+# All graph update operations use natural language via the query endpoint
+POST /api/rag/query/stream
+Content-Type: application/json
+Body: {
+  "query": "Create 'Software Engineering' and connect it to Python, Java, and TypeScript",
+  "document_id": "your-doc-id"
+}
+
+Example operations:
+1. Create node:
+   "Create a new node called 'Data Science'"
+
+2. Create node with connections (batch):
+   "Create 'AI Research' and connect it to Python, Statistics, and Machine Learning"
+
+3. Delete node:
+   "Delete the node named 'Machine Learning'"
+
+4. Merge nodes:
+   "Merge 'AI' and 'Artificial Intelligence' into one node"
+
+5. Update node:
+   "Update the description of 'Python' to 'Programming language'"
+
+6. Create relationship:
+   "Create a WORKS_ON relationship from John to Project X"
+
+7. Delete relationship:
+   "Delete the relationship between AI and Machine Learning"
+
+Response includes:
+- Operation success/failure status
+- Detailed results (created, updated, deleted entities/relationships)
+- Error messages if any operations failed
+- graph_updated event triggers frontend refresh
 ```
 
 ### Search Tools
@@ -1265,15 +1425,17 @@ ES_JAVA_OPTS=-Xms256m -Xmx256m
    - Expected: Better RAGAS scores, especially for complex reasoning
    - Trade-off: Higher costs
 
-9. **Natural Language Graph Refinement**
-   - Current: UI in place for natural language ontology improvements
-   - Improvement: Add backend functionality to process natural language commands
-   - Features to implement:
-     - "Merge these two nodes"
-     - "Add relationship between X and Y"
-     - "Rename entity A to B"
-     - "Delete duplicate entities"
-   - Benefit: User-friendly graph refinement without Cypher knowledge
+9. ~~**Natural Language Graph Refinement**~~ ✅ **COMPLETED in v1.2.0**
+   - ✅ Backend functionality for natural language graph updates
+   - ✅ Supported operations:
+     - ✅ "Create X and connect to Y, Z" (batch operations)
+     - ✅ "Merge these two nodes"
+     - ✅ "Add relationship between X and Y"
+     - ✅ "Update entity properties"
+     - ✅ "Delete nodes and relationships"
+   - ✅ Real-time frontend auto-refresh
+   - ✅ User-friendly graph refinement without Cypher knowledge
+   - 🎯 Result: 9 powerful operations for complete graph management
 
 10. **Query Caching & Performance**
     - Cache frequent entity queries
@@ -1281,8 +1443,16 @@ ES_JAVA_OPTS=-Xms256m -Xmx256m
     - Optimize Neo4j queries for large graphs
     - Implement result pagination for large result sets
 
-### Completed Enhancements in v1.1.0 ✅
+### Completed Enhancements ✅
 
+**v1.2.0:**
+- [x] Natural language graph updates (9 operations)
+- [x] Create node with batch relationship connections
+- [x] Real-time frontend auto-refresh after graph changes
+- [x] Detailed success/failure feedback for operations
+- [x] LLM-powered operation extraction from natural language
+
+**v1.1.0:**
 - [x] Multi-hop graph traversal (1-hop and 2-hop)
 - [x] 3-pass graph enrichment system
 - [x] Enhanced retrieval with 5x/3x multipliers
@@ -1298,9 +1468,9 @@ ES_JAVA_OPTS=-Xms256m -Xmx256m
 
 - Entity deduplication may need manual review for edge cases
 - Large documents (1000+ pages) may hit memory limits
-- Natural language graph refinement UI exists but backend functionality needs implementation
 - 2-hop traversal can be slow on very large graphs (10,000+ nodes)
 - MAX_PERFORMANCE mode increases API costs 3-4x
+- Graph update operations only work on entities within the same document (cross-document updates not yet supported)
 
 For detailed improvement roadmap, see [todo.md](todo.md) and [updates/](updates/) folder.
 
@@ -1334,7 +1504,18 @@ This project is built for a Hackathon.
 
 ## Version History
 
-### v1.1.0 (October 13, 2025) - Current Release
+### v1.2.0 (October 13, 2025) - Current Release
+- ✨ NEW: Natural Language Graph Updates - 4th tool added to search agent
+- ✨ NEW: 9 graph update operations (Create, Delete, Merge, Update, Connect)
+- ✨ NEW: Batch operations - create node + connect to multiple nodes at once
+- ✨ NEW: Real-time frontend auto-refresh after graph changes
+- ✨ NEW: LLM-powered operation extraction from natural language commands
+- 🎯 ENHANCED: Detailed success/failure feedback for each operation
+- 🎯 ENHANCED: `create_node_with_relationships` for efficient bulk connections
+- 🔄 ENHANCED: Streaming event `graph_updated` triggers UI refresh
+- 📊 RESULT: Complete graph management without Cypher knowledge
+
+### v1.1.0 (October 13, 2025)
 - ✨ NEW: Multi-hop graph traversal (1-hop, 2-hop) with comprehensive analysis
 - ✨ NEW: 3-pass graph enrichment for 30-50% richer knowledge graphs
 - ✨ NEW: MAX_PERFORMANCE mode for parallel tool execution
@@ -1361,7 +1542,7 @@ This project is built for a Hackathon.
 
 **Last Updated**: 2025-10-13
 **Status**: ✅ Production Ready
-**Version**: 1.1.0
+**Version**: 1.2.0
 
 ---
 
