@@ -30,8 +30,8 @@ class Settings(BaseSettings):
 
     # Document Processing
     chunk_size: int = 1200
-    chunk_overlap: int = 400
-    top_k_results: int = 10
+    chunk_overlap: int = 500  # Increased from 400 to reduce information loss at boundaries
+    top_k_results: int = 20  # Increased from 15 to improve Context Recall further
 
     # Storage
     storage_path: str = "/app/storage"
@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     graphrag_concurrency: int = 25  # Number of concurrent chunk processing tasks
     graphrag_max_retries: int = 3  # Maximum retries for failed chunk processing
     graphrag_base_backoff: float = 0.5  # Base backoff time in seconds for retries
+
+    # Multi-Pass Graph Enrichment Settings
+    graphrag_enable_multipass: bool = True  # Enable 3-pass graph enrichment
+    graphrag_num_passes: int = 3  # Number of passes through document (1-3 recommended)
 
     # Entity Resolution
     entity_similarity_threshold: float = 0.85
@@ -60,6 +64,7 @@ class Settings(BaseSettings):
     enable_graph_search: bool = True
     enable_filter_search: bool = True
     default_search_tools: str = "auto"
+    max_performance: bool = False  # Run all search tools in parallel
 
     @property
     def elasticsearch_url(self) -> str:

@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import './App.css';
 import GraphVisualization from './components/GraphVisualization';
 
@@ -245,29 +247,30 @@ function App() {
   };
 
   const formatAnswer = (content) => {
-    const answerMatch = content.match(/\*\*Answer:\*\*(.*?)(\*\*Reasoning:\*\*|$)/s);
-    const reasoningMatch = content.match(/\*\*Reasoning:\*\*(.*?)$/s);
-
-    if (answerMatch || reasoningMatch) {
-      return (
-        <div className="formatted-answer">
-          {answerMatch && (
-            <div className="answer-section">
-              <div className="section-label">💡 Answer</div>
-              <div className="section-content">{answerMatch[1].trim()}</div>
-            </div>
-          )}
-          {reasoningMatch && (
-            <div className="reasoning-section">
-              <div className="section-label">🧠 Reasoning</div>
-              <div className="section-content">{reasoningMatch[1].trim()}</div>
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    return content;
+    // Use ReactMarkdown to properly render markdown with formatting
+    return (
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          // Ensure proper spacing for headings
+          // eslint-disable-next-line jsx-a11y/heading-has-content
+          h1: ({node, ...props}) => <h1 style={{marginTop: '1em', marginBottom: '0.5em'}} {...props} />,
+          // eslint-disable-next-line jsx-a11y/heading-has-content
+          h2: ({node, ...props}) => <h2 style={{marginTop: '1em', marginBottom: '0.5em'}} {...props} />,
+          // eslint-disable-next-line jsx-a11y/heading-has-content
+          h3: ({node, ...props}) => <h3 style={{marginTop: '0.8em', marginBottom: '0.4em'}} {...props} />,
+          // Ensure proper spacing for paragraphs
+          p: ({node, ...props}) => <p style={{marginBottom: '1em', lineHeight: '1.6'}} {...props} />,
+          // Ensure proper spacing for lists
+          ul: ({node, ...props}) => <ul style={{marginTop: '0.5em', marginBottom: '1em'}} {...props} />,
+          ol: ({node, ...props}) => <ol style={{marginTop: '0.5em', marginBottom: '1em'}} {...props} />,
+          // Ensure proper spacing for horizontal rules
+          hr: ({node, ...props}) => <hr style={{margin: '1.5em 0', border: 'none', borderTop: '1px solid #ddd'}} {...props} />,
+        }}
+      >
+        {content}
+      </ReactMarkdown>
+    );
   };
 
   return (
