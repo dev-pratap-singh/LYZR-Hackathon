@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import * as d3 from 'd3';
-import { ZoomIn, ZoomOut, Maximize2, Search } from 'lucide-react';
+import { ZoomIn, ZoomOut, Maximize2, Search, Minimize2 } from 'lucide-react';
 import axios from 'axios';
 
 const API_URL = 'http://localhost:8000';
 
-const GraphVisualization = () => {
+const GraphVisualization = ({ refreshTrigger = 0 }) => {
   const [nodes, setNodes] = useState([]);
   const [edges, setEdges] = useState([]);
   const [selectedNode, setSelectedNode] = useState(null);
@@ -15,6 +15,9 @@ const GraphVisualization = () => {
   const [stats, setStats] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [showTable, setShowTable] = useState(false);
+  const [linkDistance, setLinkDistance] = useState(350); // Increased default distance for better spacing
+  const [chargeStrength, setChargeStrength] = useState(-1500); // Increased repulsion for better spacing
+  const [isFullscreen, setIsFullscreen] = useState(false); // Fullscreen mode
 
   const svgRef = useRef(null);
   const simulationRef = useRef(null);
@@ -24,6 +27,28 @@ const GraphVisualization = () => {
   useEffect(() => {
     fetchGraphData();
   }, []);
+
+  // Refetch graph data when refreshTrigger changes (after graph updates)
+  useEffect(() => {
+    if (refreshTrigger > 0) {
+      console.log('Graph update detected, refreshing graph data...');
+      fetchGraphData();
+    }
+  }, [refreshTrigger]);
+
+  // ESC key to exit fullscreen
+  useEffect(() => {
+    const handleEscKey = (event) => {
+      if (event.key === 'Escape' && isFullscreen) {
+        setIsFullscreen(false);
+        setSelectedNode(null);
+        setSelectedEdge(null);
+      }
+    };
+
+    window.addEventListener('keydown', handleEscKey);
+    return () => window.removeEventListener('keydown', handleEscKey);
+  }, [isFullscreen]);
 
   const fetchGraphData = async () => {
     setLoading(true);
@@ -53,8 +78,9 @@ const GraphVisualization = () => {
     if (!svgRef.current || nodes.length === 0) return;
 
     const svg = d3.select(svgRef.current);
-    const width = 1000;
-    const height = 600;
+    // Dynamic sizing based on fullscreen mode
+    const width = isFullscreen ? window.innerWidth - 40 : 1000;
+    const height = isFullscreen ? window.innerHeight - 200 : 600;
 
     // Clear previous content
     svg.selectAll('*').remove();
@@ -71,16 +97,53 @@ const GraphVisualization = () => {
     svg.call(zoom);
     zoomBehaviorRef.current = zoom;
 
-    // Create force simulation - increased distances for larger nodes
+    // Calculate node radius based on text length (subtle scaling)
+    const getNodeRadius = (node) => {
+      const label = node.label || node.id;
+      const textLength = label.length;
+      // Base radius: 50, grows slightly with text length
+      // Max radius: 70 for very long text
+      return Math.min(50 + (textLength * 0.8), 70);
+    };
+
+    // Store radius on each node for later use
+    nodes.forEach(node => {
+      node.radius = getNodeRadius(node);
+    });
+
+    // Create node ID set for fast lookup
+    const nodeIds = new Set(nodes.map(n => n.id));
+
+    // Filter out edges with missing source or target nodes
+    const validEdges = edges.filter(e => {
+      const hasSource = nodeIds.has(e.source);
+      const hasTarget = nodeIds.has(e.target);
+
+      if (!hasSource || !hasTarget) {
+        console.warn(`⚠️ Skipping orphaned edge: ${e.source} -> ${e.target} (${e.type})`);
+        if (!hasSource) console.warn(`  Missing source node: ${e.source}`);
+        if (!hasTarget) console.warn(`  Missing target node: ${e.target}`);
+      }
+
+      return hasSource && hasTarget;
+    });
+
+    // Log summary if edges were filtered
+    if (validEdges.length < edges.length) {
+      console.warn(`⚠️ Graph Data Integrity Issue: ${edges.length - validEdges.length} orphaned edges filtered out`);
+      console.warn('💡 Tip: These edges reference nodes that don\'t exist. Consider cleaning up your graph database.');
+    }
+
+    // Create force simulation - adjusted for dynamic node sizes and spacing
     const simulation = d3.forceSimulation(nodes)
-      .force('link', d3.forceLink(edges.map(e => ({
+      .force('link', d3.forceLink(validEdges.map(e => ({
         source: nodes.find(n => n.id === e.source),
         target: nodes.find(n => n.id === e.target),
         ...e
-      }))).id(d => d.id).distance(200))
-      .force('charge', d3.forceManyBody().strength(-800))
+      }))).id(d => d.id).distance(linkDistance))
+      .force('charge', d3.forceManyBody().strength(chargeStrength))
       .force('center', d3.forceCenter(width / 2, height / 2))
-      .force('collision', d3.forceCollide().radius(80));
+      .force('collision', d3.forceCollide().radius(d => d.radius + 15)); // Increased collision padding
 
     simulationRef.current = simulation;
 
@@ -88,13 +151,13 @@ const GraphVisualization = () => {
     const defs = svg.append('defs');
 
     // Get unique edge types for different colored arrows
-    const edgeTypes = [...new Set(edges.map(e => e.type))];
-    edgeTypes.forEach((type, i) => {
-      const color = d3.schemeCategory10[i % 10];
+    const edgeTypes = [...new Set(validEdges.map(e => e.type))];
+    edgeTypes.forEach((type, index) => {
+      const color = d3.schemeCategory10[index % 10];
       defs.append('marker')
         .attr('id', `arrowhead-${type}`)
         .attr('viewBox', '-10 -5 10 10')
-        .attr('refX', 55)
+        .attr('refX', 65)  // Adjusted for slightly larger nodes
         .attr('refY', 0)
         .attr('markerWidth', 6)
         .attr('markerHeight', 6)
@@ -104,10 +167,10 @@ const GraphVisualization = () => {
         .attr('fill', color);
     });
 
-    // Draw edges
+    // Draw edges (using validEdges to exclude orphaned relationships)
     const link = g.append('g')
       .selectAll('g')
-      .data(edges)
+      .data(validEdges)
       .join('g');
 
     const linkLine = link.append('line')
@@ -147,7 +210,7 @@ const GraphVisualization = () => {
         .on('end', dragended));
 
     node.append('circle')
-      .attr('r', 50)
+      .attr('r', d => d.radius)  // Use dynamic radius based on text length
       .attr('fill', d => colorScale(d.type))
       .attr('stroke', '#fff')
       .attr('stroke-width', 3)
@@ -160,9 +223,11 @@ const GraphVisualization = () => {
       .attr('font-weight', 'bold')
       .attr('font-size', '14px')
       .text(d => {
-        // Show longer labels with better truncation
+        // Show longer labels with better truncation, adjusted for node size
         const label = d.label || d.id;
-        return label.length > 25 ? label.substring(0, 22) + '...' : label;
+        // Larger nodes can show more text
+        const maxChars = d.radius > 60 ? 30 : 25;
+        return label.length > maxChars ? label.substring(0, maxChars - 3) + '...' : label;
       })
       .style('pointer-events', 'none');
 
@@ -172,18 +237,18 @@ const GraphVisualization = () => {
       setSelectedEdge(null);
     });
 
-    // Add hover effect
-    node.on('mouseover', function(event, d) {
+    // Add hover effect - scales proportionally to base size
+    node.on('mouseover', function(_event, d) {
       d3.select(this).select('circle')
         .transition()
         .duration(200)
-        .attr('r', 60);
+        .attr('r', d.radius + 10);  // Grows by 10px on hover
     })
-    .on('mouseout', function() {
+    .on('mouseout', function(_event, d) {
       d3.select(this).select('circle')
         .transition()
         .duration(200)
-        .attr('r', 50);
+        .attr('r', d.radius);  // Back to original size
     });
 
     // Update positions on tick
@@ -249,7 +314,7 @@ const GraphVisualization = () => {
         simulationRef.current.stop();
       }
     };
-  }, [nodes, edges]);
+  }, [nodes, edges, linkDistance, chargeStrength, isFullscreen]);
 
   const handleZoomIn = () => {
     if (!zoomBehaviorRef.current || !svgRef.current) return;
@@ -315,6 +380,13 @@ const GraphVisualization = () => {
     }
   };
 
+  const toggleFullscreen = () => {
+    setIsFullscreen(!isFullscreen);
+    // Reset selections when toggling fullscreen
+    setSelectedNode(null);
+    setSelectedEdge(null);
+  };
+
   if (loading) {
     return (
       <div className="graph-loading">
@@ -345,7 +417,7 @@ const GraphVisualization = () => {
   }
 
   return (
-    <div className="graph-visualization-container">
+    <div className={`graph-visualization-container ${isFullscreen ? 'fullscreen' : ''}`}>
       <div className="graph-header">
         <h2>🕸️ Knowledge Graph Visualization</h2>
         {stats && (
@@ -376,6 +448,40 @@ const GraphVisualization = () => {
           </button>
         </div>
 
+        {/* Spacing Controls */}
+        <div className="spacing-controls">
+          <div className="slider-control">
+            <label htmlFor="link-distance">
+              Node Distance: <strong>{linkDistance}</strong>
+            </label>
+            <input
+              id="link-distance"
+              type="range"
+              min="100"
+              max="600"
+              step="50"
+              value={linkDistance}
+              onChange={(e) => setLinkDistance(Number(e.target.value))}
+              className="distance-slider"
+            />
+          </div>
+          <div className="slider-control">
+            <label htmlFor="charge-strength">
+              Repulsion: <strong>{Math.abs(chargeStrength)}</strong>
+            </label>
+            <input
+              id="charge-strength"
+              type="range"
+              min="-3000"
+              max="-500"
+              step="100"
+              value={chargeStrength}
+              onChange={(e) => setChargeStrength(Number(e.target.value))}
+              className="distance-slider"
+            />
+          </div>
+        </div>
+
         <div className="zoom-controls">
           <button onClick={handleZoomIn} title="Zoom In" className="control-button">
             <ZoomIn size={18} />
@@ -385,6 +491,14 @@ const GraphVisualization = () => {
           </button>
           <button onClick={handleResetZoom} title="Reset Zoom" className="control-button">
             <Maximize2 size={18} />
+          </button>
+          <button
+            onClick={toggleFullscreen}
+            title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+            className="control-button fullscreen-button"
+          >
+            {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+            <span style={{ marginLeft: '6px' }}>{isFullscreen ? 'Exit' : 'Fullscreen'}</span>
           </button>
           <button
             onClick={() => setShowTable(!showTable)}
@@ -406,8 +520,8 @@ const GraphVisualization = () => {
       <div className="graph-canvas-wrapper">
         <svg
           ref={svgRef}
-          width="1000"
-          height="600"
+          width={isFullscreen ? window.innerWidth - 40 : 1000}
+          height={isFullscreen ? window.innerHeight - 200 : 600}
           className="graph-canvas"
         />
 

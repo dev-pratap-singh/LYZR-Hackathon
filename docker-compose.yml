@@ -49,6 +49,7 @@ services:
       - ENABLE_GRAPH_SEARCH=${ENABLE_GRAPH_SEARCH}
       - ENABLE_FILTER_SEARCH=${ENABLE_FILTER_SEARCH}
       - DEFAULT_SEARCH_TOOLS=${DEFAULT_SEARCH_TOOLS}
+      - MAX_PERFORMANCE=${MAX_PERFORMANCE}
     volumes:
       - ./backend/app:/app/app
       - ./storage:/app/storage
