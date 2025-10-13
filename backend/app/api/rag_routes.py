@@ -705,6 +705,48 @@ async def clear_all_graph_data(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/graph/cleanup-orphans")
+async def cleanup_orphaned_relationships():
+    """
+    Remove orphaned relationships (edges that reference non-existent nodes)
+
+    This fixes data integrity issues where relationships point to deleted nodes.
+
+    Returns:
+        Number of orphaned relationships removed
+    """
+    try:
+        logger.info("API request to cleanup orphaned relationships")
+
+        # Query to find and delete orphaned relationships
+        # Relationships where either source or target node doesn't exist
+        cleanup_cypher = """
+        MATCH ()-[r]->()
+        WHERE NOT EXISTS {
+            MATCH (start)-[r]->(end)
+            WHERE (start:__Entity__ OR start:__Document__)
+              AND (end:__Entity__ OR end:__Document__)
+        }
+        DELETE r
+        RETURN count(r) as deleted_count
+        """
+
+        result = await neo4j_service.query_graph(cleanup_cypher, {})
+        deleted_count = result[0]["deleted_count"] if result else 0
+
+        logger.info(f"Cleanup complete: {deleted_count} orphaned relationships removed")
+
+        return {
+            "success": True,
+            "message": f"Removed {deleted_count} orphaned relationship(s)",
+            "deleted_count": deleted_count
+        }
+
+    except Exception as e:
+        logger.error(f"Error cleaning up orphaned relationships: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ==== Elasticsearch / Filter Search Endpoints ====
 class FilterSearchRequest(BaseModel):
     query: str = ""

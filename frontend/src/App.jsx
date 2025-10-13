@@ -19,6 +19,7 @@ function App() {
   const [isDragging, setIsDragging] = useState(false);
   const [metrics, setMetrics] = useState({ steps: 0, tools: 0, time: 0 });
   const [showGraph, setShowGraph] = useState(false);
+  const [graphUpdateTrigger, setGraphUpdateTrigger] = useState(0);
 
   const messagesEndRef = useRef(null);
   const reasoningEndRef = useRef(null);
@@ -202,6 +203,11 @@ function App() {
       tools: event.metadata?.tool ? prev.tools + 1 : prev.tools,
       time: prev.time
     }));
+
+    // If graph was updated, trigger refresh
+    if (event.type === 'graph_updated') {
+      setGraphUpdateTrigger(prev => prev + 1);
+    }
   };
 
   const clearMessages = () => {
@@ -241,7 +247,8 @@ function App() {
       'reasoning': '💭',
       'final_answer': '🎯',
       'error': '❌',
-      'metadata': 'ℹ️'
+      'metadata': 'ℹ️',
+      'graph_updated': '🔄'
     };
     return icons[type] || '📌';
   };
@@ -482,7 +489,7 @@ function App() {
         <div className="graph-layout">
           {/* Graph Panel */}
           <div className="graph-panel-large">
-            <GraphVisualization />
+            <GraphVisualization refreshTrigger={graphUpdateTrigger} />
           </div>
 
           {/* Chat Panel (smaller) */}
