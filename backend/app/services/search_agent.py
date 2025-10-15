@@ -25,6 +25,7 @@ from app.services.graph_search import graph_search_service
 from app.services.graphrag_pipeline import GraphRAGPipeline
 from app.services.neo4j_service import neo4j_service
 from app.services.elasticsearch_service import elasticsearch_service
+from app.services.memory import MemoryManager
 
 logger = logging.getLogger(__name__)
 
@@ -188,7 +189,9 @@ class SearchAgent:
             model=settings.openai_model,
             temperature=0,  # Zero temperature for more deterministic, factual responses
             openai_api_key=settings.openai_api_key,
-            streaming=True
+            streaming=True,
+            timeout=300,  # 5 minute timeout for OpenAI API calls
+            request_timeout=300  # 5 minute request timeout
         )
 
         # Initialize search services
@@ -208,6 +211,25 @@ class SearchAgent:
         # GraphRAG pipeline for processing documents
         self.graphrag_pipeline = GraphRAGPipeline()
         self.graph_processing_started = False
+
+        # Initialize Memory Manager
+        self.memory_manager = None
+        if settings.memory_enabled:
+            try:
+                self.memory_manager = MemoryManager(
+                    db_host=settings.memory_db_host,
+                    db_port=settings.memory_db_port,
+                    db_name=settings.memory_db_name,
+                    db_user=settings.memory_db_user,
+                    db_password=settings.memory_db_password,
+                    model_name=settings.memory_model,
+                    openai_api_key=settings.openai_api_key,
+                    session_id=settings.memory_session_id
+                )
+                logger.info("Memory Manager initialized successfully")
+            except Exception as e:
+                logger.error(f"Failed to initialize Memory Manager: {e}")
+                self.memory_manager = None
 
         logger.info("Multi-Tool Search Agent initialized")
 
@@ -902,6 +924,10 @@ Return ONLY valid JSON with the operation details, no explanation."""
 
 **Tool Selection:**
 
+**CRITICAL: When user explicitly requests a specific tool, YOU MUST USE THAT TOOL!**
+- If user says "use filter search", "filter search", "use graph search", "graph search", "use vector search", "vector search" → USE THAT SPECIFIC TOOL
+- User's explicit tool preference ALWAYS overrides default selection logic
+
 Use **graph_update** for:
 - "Delete node/entity X", "Remove X from the graph"
 - "Merge X and Y", "Combine entities A and B"
@@ -922,12 +948,15 @@ Use **vector_search** for:
 - General "what/why/how" questions about concepts or topics
 - Definitions, explanations, summaries of general concepts
 - Finding information, facts, or content from documents
+- ANY query where user says "use vector search" or "vector search only"
 - DEFAULT choice when unsure AND user hasn't specified a tool
 
 Use **filter_search** for:
 - Date/metadata filtering ("documents from 2023")
 - Category/tag filtering ("papers in category X")
 - Author filtering ("documents by author Y")
+- ANY query where user says "use filter search" or "filter search only"
+- When user explicitly requests metadata-based filtering
 
 **IMPORTANT:**
 - You have access to {tool_names}
@@ -1155,6 +1184,364 @@ Generate your comprehensive answer now:"""
 *Note: Automatic synthesis failed. Showing raw results from all search tools.*"""
             return fallback
 
+    async def _check_memory_for_answer(self, query: str) -> Optional[Dict[str, Any]]:
+        """
+        Check if the query can be answered from conversation memory
+
+        This implements the memory-first strategy:
+        1. Search memory for relevant context
+        2. Get conversation history
+        3. Use LLM to decide if memory has the answer
+        4. Return answer if found, None otherwise
+
+        Args:
+            query: User's query
+
+        Returns:
+            Dictionary with answer and metadata if found, None otherwise
+        """
+        if not self.memory_manager:
+            return None
+
+        try:
+            logger.info("Checking memory for potential answer...")
+
+            # Get conversation history and relevant memory items
+            conversation_history = self.memory_manager.generate_conversation_summary(limit=10)
+            relevant_memories = self.memory_manager.search_memory_semantic(
+                query=query,
+                limit=50,  # IMPROVED: Increased from 15 to 50 to search more chunks (45% of 112 chunks)
+                content_types=['user_query', 'assistant_response', 'large_query_chunk']  # Added large_query_chunk
+            )
+
+            # If no relevant memories, skip memory check
+            if not relevant_memories or conversation_history == "No previous conversation history.":
+                logger.info("No relevant memory found, will search documents")
+                return None
+
+            # Build context from relevant memories
+            memory_context_parts = []
+            has_large_chunks = False
+
+            for idx, mem in enumerate(relevant_memories, 1):
+                content_type_label = "Question"
+                if mem['content_type'] == 'assistant_response':
+                    content_type_label = "Answer"
+                elif mem['content_type'] == 'large_query_chunk':
+                    content_type_label = "Document Chunk"
+                    has_large_chunks = True
+
+                relevance = mem.get('relevance_score', 0)
+                memory_context_parts.append(
+                    f"[Memory {idx}] ({content_type_label}, Relevance: {relevance:.2f})\n{mem['full_content']}"
+                )
+
+            memory_context = "\n\n".join(memory_context_parts)
+
+            # Ask LLM if memory can answer the question
+            # Adapt prompt based on whether we have large document chunks
+            if has_large_chunks:
+                memory_check_prompt = f"""You are a helpful AI assistant with access to document chunks and conversation history.
+
+**Current Question:** {query}
+
+**Available Context:**
+
+{memory_context}
+
+**Your Task:**
+Analyze if you can answer the current question based ONLY on the context provided above (document chunks, conversation history, etc.).
+
+**Instructions:**
+1. If the answer is clearly present in the provided context, respond with:
+   ANSWER_FOUND: <your detailed answer>
+
+2. If the question requires information NOT in the provided context, respond with:
+   NEED_SEARCH: <brief explanation why>
+
+**Examples:**
+- Question about facts that appear in Document Chunks → ANSWER_FOUND (provide answer citing which chunks)
+- Question about something NOT mentioned in any context → NEED_SEARCH
+- Question with partial information in context → ANSWER_FOUND (use available information)
+
+**Important:**
+- Prioritize information from Document Chunks as they contain the source material
+- Use conversation history for additional context
+- Cite which memory/chunk contains the information
+- Be thorough - check ALL provided chunks before saying NEED_SEARCH
+
+**Your Response:**"""
+            else:
+                memory_check_prompt = f"""You are a helpful AI assistant with access to conversation history.
+
+**Current Question:** {query}
+
+**Conversation History:**
+{conversation_history}
+
+**Relevant Memory Context:**
+{memory_context}
+
+**Your Task:**
+Analyze if you can answer the current question based ONLY on the conversation history and memory context above.
+
+**Instructions:**
+1. If the answer is clearly present in the conversation history/memory, respond with:
+   ANSWER_FOUND: <your detailed answer>
+
+2. If the question requires information NOT in the conversation history (new information from documents), respond with:
+   NEED_SEARCH: <brief explanation why>
+
+Examples:
+- "What fake painting..." when conversation history discusses paintings → ANSWER_FOUND
+- "Who invested..." when previous Q&A mentions investments → ANSWER_FOUND
+- "What is quantum computing?" without prior discussion → NEED_SEARCH
+- "Tell me about X" where X wasn't discussed before → NEED_SEARCH
+
+**Your Response:**"""
+
+            # Get LLM decision
+            response = await self.llm.ainvoke(memory_check_prompt)
+            response_text = response.content.strip()
+
+            logger.info(f"Memory check response: {response_text[:200]}")
+
+            # Parse response
+            if response_text.startswith("ANSWER_FOUND:"):
+                answer = response_text.replace("ANSWER_FOUND:", "").strip()
+                logger.info("✓ Answer found in memory, skipping document search")
+                return {
+                    'answer': answer,
+                    'source': 'memory',
+                    'relevant_memories': relevant_memories,
+                    'confidence': 'high'
+                }
+            else:
+                logger.info("✗ Memory check: Need to search documents")
+                return None
+
+        except Exception as e:
+            logger.error(f"Error checking memory: {e}", exc_info=True)
+            return None
+
+    async def _track_and_emit_memory_state(self, input_tokens: int, output_tokens: int) -> Optional[Dict]:
+        """
+        Track token usage and get memory state for streaming
+
+        Args:
+            input_tokens: Number of input tokens used
+            output_tokens: Number of output tokens used
+
+        Returns:
+            Memory state dictionary for streaming, or None if memory is disabled
+        """
+        if not self.memory_manager:
+            return None
+
+        try:
+            # Track token usage
+            token_stats = self.memory_manager.track_token_usage(input_tokens, output_tokens)
+
+            # Get memory state
+            memory_state = self.memory_manager.export_memory_state_json()
+
+            return {
+                'token_stats': token_stats,
+                'memory_state': memory_state
+            }
+        except Exception as e:
+            logger.error(f"Error tracking memory state: {e}")
+            return None
+
+    async def _process_large_query_with_memory(self, query: str) -> str:
+        """
+        Process extremely large queries by chunking them into memory and searching
+
+        This handles cases where the user provides a massive context (e.g., an entire book)
+        along with a question. We:
+        1. Extract the question from the query
+        2. Chunk the large context into memory
+        3. Search through memory to find relevant chunks
+        4. Answer based on retrieved chunks
+
+        Args:
+            query: Large query containing question + context
+
+        Returns:
+            Answer based on memory search
+        """
+        try:
+            logger.info("Processing large query with memory chunking")
+
+            # Emit progress event
+            yield f"data: {json.dumps({'type': 'thinking', 'content': '📝 Detected large query. Chunking into memory for processing...', 'metadata': {}, 'timestamp': datetime.now().isoformat()})}\n\n"
+
+            # Split query into question and passage
+            # Detect patterns like "Answer X? Passage: Y" or "Question: X Context: Y"
+            question = ""
+            passage = query
+
+            # Try to extract question
+            for separator in ["? Passage:", "? Context:", "?\n\n", "?\n"]:
+                if separator in query:
+                    parts = query.split(separator, 1)
+                    question = parts[0].strip() + "?"
+                    passage = parts[1].strip() if len(parts) > 1 else ""
+                    break
+
+            # If no clear question found, look for "Answer this question"
+            if not question or len(question) < 10:
+                import re
+                match = re.search(r'Answer this question[^?]*\?([^?]+\?)', query, re.IGNORECASE)
+                if match:
+                    question = match.group(1).strip()
+                    # Rest is the passage
+                    passage = re.sub(r'Answer this question[^?]*\?[^?]+\?', '', query, flags=re.IGNORECASE).strip()
+
+            if not question:
+                question = "What information is contained in this text?"
+
+            logger.info(f"Extracted question: {question[:100]}")
+
+            # Emit question extraction
+            yield f"data: {json.dumps({'type': 'thinking', 'content': f'❓ Question extracted: {question}', 'metadata': {}, 'timestamp': datetime.now().isoformat()})}\n\n"
+
+            # Chunk the large passage into memory (chunk size: 1000 tokens)
+            chunk_size = 1000
+            tokens = self.memory_manager.encoding.encode(passage)
+            total_chunks = (len(tokens) + chunk_size - 1) // chunk_size
+
+            logger.info(f"Chunking {len(tokens)} tokens into {total_chunks} chunks")
+            yield f"data: {json.dumps({'type': 'thinking', 'content': f'✂️ Chunking {len(tokens):,} tokens into {total_chunks} chunks...', 'metadata': {}, 'timestamp': datetime.now().isoformat()})}\n\n"
+
+            # Store chunks in memory
+            chunk_ids = []
+            for i in range(0, len(tokens), chunk_size):
+                chunk_tokens = tokens[i:i + chunk_size]
+                chunk_text = self.memory_manager.encoding.decode(chunk_tokens)
+
+                item_id = self.memory_manager.add_memory_item(
+                    content=chunk_text,
+                    content_type="large_query_chunk",
+                    priority=5,
+                    metadata={
+                        "chunk_index": len(chunk_ids),
+                        "total_chunks": total_chunks,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                )
+                chunk_ids.append(item_id)
+
+            logger.info(f"Stored {len(chunk_ids)} chunks in memory")
+            yield f"data: {json.dumps({'type': 'thinking', 'content': f'💾 Stored {len(chunk_ids)} chunks in memory', 'metadata': {}, 'timestamp': datetime.now().isoformat()})}\n\n"
+
+            # Now create embeddings for each chunk and search
+            yield f"data: {json.dumps({'type': 'thinking', 'content': f'🔍 Searching through {len(chunk_ids)} chunks for relevant information...', 'metadata': {}, 'timestamp': datetime.now().isoformat()})}\n\n"
+
+            # Generate embedding for the question
+            question_embedding = await self.embedding_service.generate_query_embedding(question)
+
+            # Retrieve all chunks and compute similarity
+            cursor = self.memory_manager._get_cursor()
+            cursor.execute("""
+                SELECT id, full_content, token_count
+                FROM memory_items
+                WHERE session_id = %s AND content_type = 'large_query_chunk'
+                ORDER BY metadata->>'chunk_index'
+            """, (self.memory_manager.session_id,))
+
+            chunks = cursor.fetchall()
+            cursor.close()
+
+            # Compute similarity for each chunk
+            from sklearn.metrics.pairwise import cosine_similarity
+            import numpy as np
+
+            chunk_scores = []
+            for chunk in chunks:
+                chunk_embedding = await self.embedding_service.generate_query_embedding(chunk['full_content'])
+                similarity = cosine_similarity([question_embedding], [chunk_embedding])[0][0]
+                chunk_scores.append({
+                    'id': chunk['id'],
+                    'content': chunk['full_content'],
+                    'score': similarity,
+                    'tokens': chunk['token_count']
+                })
+
+            # Sort by similarity and take top chunks
+            chunk_scores.sort(key=lambda x: x['score'], reverse=True)
+            top_chunks = chunk_scores[:10]  # Top 10 most relevant chunks
+
+            logger.info(f"Retrieved top {len(top_chunks)} relevant chunks")
+            yield f"data: {json.dumps({'type': 'thinking', 'content': f'📚 Found {len(top_chunks)} relevant chunks. Generating answer...', 'metadata': {}, 'timestamp': datetime.now().isoformat()})}\n\n"
+
+            # Build context from top chunks
+            context_parts = []
+            for idx, chunk_data in enumerate(top_chunks, 1):
+                context_parts.append(f"[Chunk {idx}] (Relevance: {chunk_data['score']:.3f})\n{chunk_data['content']}")
+
+            context = "\n\n".join(context_parts)
+
+            # Use LLM to answer the question based on context
+            answer_prompt = f"""Answer the following question based ONLY on the provided context chunks.
+
+Question: {question}
+
+Context:
+{context}
+
+Instructions:
+- Answer the question directly and concisely
+- Only use information from the provided context
+- If the answer is not in the context, say "I cannot find this information in the provided text"
+- Cite which chunk(s) contain the answer
+
+Answer:"""
+
+            response = await self.llm.ainvoke(answer_prompt)
+            answer = response.content.strip()
+
+            # Format the final answer
+            formatted_answer = format_markdown_output(answer)
+
+            # Emit final answer
+            final_event = {
+                "type": "final_answer",
+                "content": formatted_answer,
+                "metadata": {
+                    "mode": "large_query_memory_search",
+                    "chunks_processed": len(chunk_ids),
+                    "chunks_used": len(top_chunks),
+                    "question": question
+                },
+                "timestamp": datetime.now().isoformat()
+            }
+            yield f"data: {json.dumps(final_event)}\n\n"
+
+            # Track tokens
+            input_tokens = self.memory_manager.count_tokens(answer_prompt)
+            output_tokens = self.memory_manager.count_tokens(answer)
+            memory_data = await self._track_and_emit_memory_state(input_tokens, output_tokens)
+
+            if memory_data:
+                memory_event = {
+                    "type": "memory_state",
+                    "content": "Memory state updated",
+                    "metadata": memory_data,
+                    "timestamp": datetime.now().isoformat()
+                }
+                yield f"data: {json.dumps(memory_event)}\n\n"
+
+        except Exception as e:
+            logger.error(f"Error in large query processing: {e}", exc_info=True)
+            error_event = {
+                "type": "error",
+                "content": f"❌ Error processing large query: {str(e)}",
+                "metadata": {"error": str(e)},
+                "timestamp": datetime.now().isoformat()
+            }
+            yield f"data: {json.dumps(error_event)}\n\n"
+
     async def process_query_with_streaming(
         self,
         query: str,
@@ -1171,9 +1558,181 @@ Generate your comprehensive answer now:"""
             SSE-formatted event strings
         """
         try:
+            # Check if this is a very large query (> 10K tokens) that should use memory chunking
+            if self.memory_manager:
+                query_tokens = self.memory_manager.count_tokens(query)
+                logger.info(f"Query size: {query_tokens} tokens")
+
+                # If query is extremely large (> 10,000 tokens), use memory-based chunking
+                if query_tokens > 10000:
+                    logger.info(f"Large query detected ({query_tokens} tokens). Using memory chunking approach.")
+                    async for event in self._process_large_query_with_memory(query):
+                        yield event
+                    return  # Exit early, large query handled
+
+                # For normal-sized queries, store in memory as usual
+                try:
+                    self.memory_manager.add_memory_item(
+                        content=query,
+                        content_type="user_query",
+                        priority=8,
+                        metadata={"document_id": document_id, "timestamp": datetime.now().isoformat()}
+                    )
+                    logger.info(f"Stored query in memory: {query_tokens} tokens")
+                except Exception as e:
+                    logger.error(f"Error storing query in memory: {e}")
+
             # Store document_id so tools can access it
             self.current_document_id = document_id
             logger.info(f"Processing query with document_id: {document_id}, MAX_PERFORMANCE={settings.max_performance}")
+
+            # ===== MEMORY-FIRST STRATEGY: Check memory before searching documents =====
+            if self.memory_manager:
+                try:
+                    # Emit memory check event
+                    memory_check_event = {
+                        "type": "thinking",
+                        "content": "🧠 Checking conversation memory for relevant context...",
+                        "metadata": {"stage": "memory_check"},
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    yield f"data: {json.dumps(memory_check_event)}\n\n"
+
+                    # Check if memory can answer the question
+                    memory_result = await self._check_memory_for_answer(query)
+
+                    if memory_result:
+                        # Answer found in memory!
+                        logger.info("✓ Answering from conversation memory")
+
+                        # Emit success event
+                        memory_found_event = {
+                            "type": "tool_end",
+                            "content": "✅ **Memory Search** completed\n📊 Found answer in conversation history",
+                            "metadata": {
+                                "tool_name": "memory_search",
+                                "source": "conversation_memory",
+                                "confidence": memory_result.get('confidence', 'high')
+                            },
+                            "timestamp": datetime.now().isoformat()
+                        }
+                        yield f"data: {json.dumps(memory_found_event)}\n\n"
+
+                        # Format the answer
+                        formatted_answer = format_markdown_output(memory_result['answer'])
+
+                        # Store response in memory
+                        try:
+                            self.memory_manager.add_memory_item(
+                                content=formatted_answer,
+                                content_type="assistant_response",
+                                priority=8,
+                                metadata={
+                                    "source": "memory",
+                                    "query": query,
+                                    "timestamp": datetime.now().isoformat()
+                                }
+                            )
+                        except Exception as e:
+                            logger.error(f"Error storing response in memory: {e}")
+
+                        # Emit final answer from memory
+                        final_event = {
+                            "type": "final_answer",
+                            "content": formatted_answer,
+                            "metadata": {
+                                "source": "conversation_memory",
+                                "relevant_memories": len(memory_result.get('relevant_memories', [])),
+                                "confidence": memory_result.get('confidence', 'high')
+                            },
+                            "timestamp": datetime.now().isoformat()
+                        }
+                        yield f"data: {json.dumps(final_event)}\n\n"
+
+                        # Track tokens
+                        input_tokens = self.memory_manager.count_tokens(query) + 500
+                        output_tokens = self.memory_manager.count_tokens(formatted_answer)
+                        memory_data = await self._track_and_emit_memory_state(input_tokens, output_tokens)
+
+                        if memory_data:
+                            memory_state_event = {
+                                "type": "memory_state",
+                                "content": "Memory state updated",
+                                "metadata": memory_data,
+                                "timestamp": datetime.now().isoformat()
+                            }
+                            yield f"data: {json.dumps(memory_state_event)}\n\n"
+
+                        # Return early - question answered from memory
+                        return
+
+                    else:
+                        # Memory doesn't have the answer, proceed to document search
+                        memory_skip_event = {
+                            "type": "thinking",
+                            "content": "💡 No relevant answer in memory. Searching documents...",
+                            "metadata": {"stage": "memory_check_complete"},
+                            "timestamp": datetime.now().isoformat()
+                        }
+                        yield f"data: {json.dumps(memory_skip_event)}\n\n"
+
+                except Exception as e:
+                    logger.error(f"Error in memory check: {e}", exc_info=True)
+                    # Continue with document search even if memory check fails
+
+            # Check if no document was provided
+            if document_id is None:
+                warning_event = {
+                    "type": "thinking",
+                    "content": "⚠️  **No document provided by user.** Checking for existing data in the system...",
+                    "metadata": {"has_document": False},
+                    "timestamp": datetime.now().isoformat()
+                }
+                yield f"data: {json.dumps(warning_event)}\n\n"
+
+                # Check for any existing data in databases
+                has_vector_data = False
+                has_graph_data = False
+
+                try:
+                    # Check vector store for any documents
+                    vector_count = await self.vector_store.get_embedding_count()
+                    has_vector_data = vector_count > 0
+                    logger.info(f"Vector store has {vector_count} chunks")
+                except Exception as e:
+                    logger.error(f"Error checking vector store: {e}")
+
+                try:
+                    # Check graph database for any nodes
+                    graph_count = await neo4j_service.get_total_nodes_count()
+                    has_graph_data = graph_count > 0
+                    logger.info(f"Graph database has {graph_count} nodes")
+                except Exception as e:
+                    logger.error(f"Error checking graph database: {e}")
+
+                # Emit status about available data
+                if not has_vector_data and not has_graph_data:
+                    no_data_event = {
+                        "type": "thinking",
+                        "content": "ℹ️  **No documents or graph data found in the system.**\n\nI'll answer your question using my general knowledge instead of searching uploaded documents.",
+                        "metadata": {"has_vector_data": False, "has_graph_data": False},
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    yield f"data: {json.dumps(no_data_event)}\n\n"
+                else:
+                    data_status = []
+                    if has_vector_data:
+                        data_status.append("uploaded documents")
+                    if has_graph_data:
+                        data_status.append("knowledge graph")
+
+                    available_data_event = {
+                        "type": "thinking",
+                        "content": f"✅ Found existing data in: {', '.join(data_status)}.\n\nI'll search through this data to answer your question.",
+                        "metadata": {"has_vector_data": has_vector_data, "has_graph_data": has_graph_data},
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    yield f"data: {json.dumps(available_data_event)}\n\n"
 
             # Setup tools if not already done
             if not self.tools:
@@ -1206,6 +1765,25 @@ Generate your comprehensive answer now:"""
                 # Synthesize results from all tools
                 final_answer = await self._synthesize_parallel_results(query, parallel_results)
 
+                # Store response in memory
+                if self.memory_manager:
+                    try:
+                        self.memory_manager.add_memory_item(
+                            content=final_answer,
+                            content_type="assistant_response",
+                            priority=8,
+                            metadata={
+                                "source": "document_search",
+                                "mode": "max_performance",
+                                "tools_used": ["vector_search", "graph_search", "filter_search"],
+                                "query": query,
+                                "timestamp": datetime.now().isoformat()
+                            }
+                        )
+                        logger.info("Stored response in memory")
+                    except Exception as e:
+                        logger.error(f"Error storing response in memory: {e}")
+
                 # Emit final answer
                 final_event = {
                     "type": "final_answer",
@@ -1229,6 +1807,25 @@ Generate your comprehensive answer now:"""
                     "timestamp": datetime.now().isoformat()
                 }
                 yield f"data: {json.dumps(metadata_event)}\n\n"
+
+                # Send memory state event if memory manager is available
+                if self.memory_manager:
+                    try:
+                        # Estimate tokens (rough approximation for streaming mode)
+                        input_tokens = self.memory_manager.count_tokens(query) + 1000  # Query + system prompts
+                        output_tokens = self.memory_manager.count_tokens(final_answer)
+
+                        memory_data = await self._track_and_emit_memory_state(input_tokens, output_tokens)
+                        if memory_data:
+                            memory_event = {
+                                "type": "memory_state",
+                                "content": "Memory state updated",
+                                "metadata": memory_data,
+                                "timestamp": datetime.now().isoformat()
+                            }
+                            yield f"data: {json.dumps(memory_event)}\n\n"
+                    except Exception as e:
+                        logger.error(f"Error emitting memory state: {e}")
 
             else:
                 # STANDARD MODE: Agent-based tool selection
@@ -1278,6 +1875,29 @@ Generate your comprehensive answer now:"""
                 # Get final result
                 result = await task
 
+                # Store response in memory
+                if self.memory_manager:
+                    try:
+                        final_output = result.get("output", "")
+                        if final_output:
+                            self.memory_manager.add_memory_item(
+                                content=final_output,
+                                content_type="assistant_response",
+                                priority=8,
+                                metadata={
+                                    "source": "document_search",
+                                    "mode": "standard",
+                                    "tools_used": [
+                                        step[0].tool for step in result.get("intermediate_steps", [])
+                                    ] if "intermediate_steps" in result else [],
+                                    "query": query,
+                                    "timestamp": datetime.now().isoformat()
+                                }
+                            )
+                            logger.info("Stored response in memory")
+                    except Exception as e:
+                        logger.error(f"Error storing response in memory: {e}")
+
                 # Send metadata event
                 metadata_event = {
                     "type": "metadata",
@@ -1292,6 +1912,28 @@ Generate your comprehensive answer now:"""
                     "timestamp": datetime.now().isoformat()
                 }
                 yield f"data: {json.dumps(metadata_event)}\n\n"
+
+                # Send memory state event if memory manager is available
+                if self.memory_manager:
+                    try:
+                        # Get the final answer from the result
+                        final_output = result.get("output", "")
+
+                        # Estimate tokens
+                        input_tokens = self.memory_manager.count_tokens(query) + 1000  # Query + system prompts
+                        output_tokens = self.memory_manager.count_tokens(final_output)
+
+                        memory_data = await self._track_and_emit_memory_state(input_tokens, output_tokens)
+                        if memory_data:
+                            memory_event = {
+                                "type": "memory_state",
+                                "content": "Memory state updated",
+                                "metadata": memory_data,
+                                "timestamp": datetime.now().isoformat()
+                            }
+                            yield f"data: {json.dumps(memory_event)}\n\n"
+                    except Exception as e:
+                        logger.error(f"Error emitting memory state: {e}")
 
         except Exception as e:
             logger.error(f"Error in query processing: {e}", exc_info=True)

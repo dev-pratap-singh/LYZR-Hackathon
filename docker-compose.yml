@@ -38,6 +38,8 @@ services:
       - ELASTICSEARCH_HOST=${ELASTICSEARCH_HOST}
       - ELASTICSEARCH_PORT=${ELASTICSEARCH_PORT}
       - ELASTICSEARCH_INDEX_NAME=${ELASTICSEARCH_INDEX_NAME}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OPENAI_MODEL=${OPENAI_MODEL}
       - OPENAI_EMBEDDING_MODEL=${OPENAI_EMBEDDING_MODEL}
@@ -50,15 +52,24 @@ services:
       - ENABLE_FILTER_SEARCH=${ENABLE_FILTER_SEARCH}
       - DEFAULT_SEARCH_TOOLS=${DEFAULT_SEARCH_TOOLS}
       - MAX_PERFORMANCE=${MAX_PERFORMANCE}
+      - MEMORY_ENABLED=true
+      - MEMORY_DB_HOST=${POSTGRES_HOST}
+      - MEMORY_DB_PORT=${POSTGRES_PORT}
+      - MEMORY_DB_NAME=${POSTGRES_DB}
+      - MEMORY_DB_USER=${POSTGRES_USER}
+      - MEMORY_DB_PASSWORD=${POSTGRES_PASSWORD}
     volumes:
       - ./backend/app:/app/app
       - ./storage:/app/storage
       - ./test:/app/test
+      - ./memory/data:/app/memory_data
+      - ./memory/src:/app/memory/src
     depends_on:
       - postgres
       - pgvector
       - neo4j
       - elasticsearch
+      - redis
     networks:
       - rag-network
 
@@ -140,6 +151,22 @@ services:
       timeout: 10s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    container_name: rag_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - rag-network
+
 networks:
   rag-network:
     driver: bridge
@@ -150,3 +177,4 @@ volumes:
   neo4j_data:
   neo4j_logs:
   elasticsearch_data:
+  redis_data:
