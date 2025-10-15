@@ -40,22 +40,29 @@ Pure white text in dark mode, markdown rendering with code blocks, smooth animat
 ## 🚀 Quick Start
 
 ```bash
-# 1. Clone and setup
-git clone <repository-url>
+# 1. Clone repository with submodules
+git clone --recurse-submodules <repository-url>
 cd LYZR-Hackathon
+
+# If already cloned without submodules:
+git submodule update --init --recursive
+
+# 2. Setup environment
 cp .env-example .env
 # Edit .env with your OpenAI API key
 
-# 2. Start services
+# 3. Start services
 docker-compose up --build
 
-# 3. Access the system
+# 4. Access the system
 # Frontend:  http://localhost:3000
 # API Docs:  http://localhost:8000/docs
 # Neo4j:     http://localhost:7474
 ```
 
 **Prerequisites**: Docker, OpenAI API Key, 8GB+ RAM
+
+**⚠️ Important**: This project uses a git submodule for the memory system from [https://github.com/dev-pratap-singh/memory](https://github.com/dev-pratap-singh/memory). Make sure to clone with `--recurse-submodules` flag or run `git submodule update --init --recursive` after cloning.
 
 ---
 
@@ -357,10 +364,18 @@ See `test/README.md` for detailed testing documentation.
 LYZR-Hackathon/
 ├── backend/          # FastAPI + Search Agent + Memory + GraphRAG
 ├── frontend/         # React + Dark Mode + Graph Visualization
+├── memory/           # Git submodule: Long-term memory system (Lyzr)
+│                     # Source: https://github.com/dev-pratap-singh/memory
 ├── test/             # Unit tests + RAGAS evaluation
 ├── docker-compose.yml
 └── .env-example
 ```
+
+**Memory Submodule**: The `memory/` directory is a git submodule containing the Lyzr long-term memory implementation. It provides:
+- Conversation tracking and history management
+- Memory facts and user preferences storage
+- Training history for model fine-tuning
+- Vector-based semantic search for memory retrieval
 
 ---
 
