@@ -377,6 +377,11 @@ LYZR-Hackathon/
 - Training history for model fine-tuning
 - Vector-based semantic search for memory retrieval
 
+**"Graph traversal timeout":**
+- Multi-hop traversal can be slow on very large graphs
+- Check Neo4j performance
+- Consider limiting 2-hop traversal depth
+
 ---
 
 ## 🔮 Future Enhancements
