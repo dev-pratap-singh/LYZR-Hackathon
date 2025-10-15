@@ -3,7 +3,7 @@ Vector Embedding Service using OpenAI
 Generates embeddings for text chunks
 """
 import logging
-from typing import List
+from typing import List, Optional
 import asyncio
 
 from openai import AsyncOpenAI
@@ -15,8 +15,15 @@ logger = logging.getLogger(__name__)
 class EmbeddingService:
     """Service for generating vector embeddings using OpenAI"""
 
-    def __init__(self):
-        self.client = AsyncOpenAI(api_key=settings.openai_api_key)
+    def __init__(self, openai_api_key: Optional[str] = None):
+        """
+        Initialize EmbeddingService with optional user-provided OpenAI API key.
+
+        Args:
+            openai_api_key: Optional OpenAI API key. If not provided, uses settings.openai_api_key
+        """
+        api_key = openai_api_key or settings.openai_api_key
+        self.client = AsyncOpenAI(api_key=api_key)
         self.model = settings.openai_embedding_model
         self.embedding_dimension = 1536  # for text-embedding-3-small
 

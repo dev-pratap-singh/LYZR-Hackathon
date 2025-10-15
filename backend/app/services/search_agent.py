@@ -183,19 +183,28 @@ class EnhancedStreamingCallback(AsyncCallbackHandler):
 class SearchAgent:
     """Advanced Search Agent with 3 tools: Vector Search, Graph Search, Filter Search"""
 
-    def __init__(self):
+    def __init__(self, openai_api_key: Optional[str] = None):
+        """
+        Initialize SearchAgent with optional user-provided OpenAI API key.
+
+        Args:
+            openai_api_key: Optional OpenAI API key. If not provided, uses settings.openai_api_key
+        """
+        # Use provided key or fallback to settings
+        api_key = openai_api_key or settings.openai_api_key
+
         # Initialize LLM with streaming support
         self.llm = ChatOpenAI(
             model=settings.openai_model,
             temperature=0,  # Zero temperature for more deterministic, factual responses
-            openai_api_key=settings.openai_api_key,
+            openai_api_key=api_key,
             streaming=True,
             timeout=300,  # 5 minute timeout for OpenAI API calls
             request_timeout=300  # 5 minute request timeout
         )
 
-        # Initialize search services
-        self.embedding_service = EmbeddingService()
+        # Initialize search services with the same API key
+        self.embedding_service = EmbeddingService(openai_api_key=api_key)
         self.vector_store = VectorStoreService()
         self.bm25_search = BM25SearchService()
         self.reranker = RerankerService()
@@ -208,8 +217,8 @@ class SearchAgent:
         self.agent_executor = None
         self.tools = []
 
-        # GraphRAG pipeline for processing documents
-        self.graphrag_pipeline = GraphRAGPipeline()
+        # GraphRAG pipeline for processing documents with user-provided API key
+        self.graphrag_pipeline = GraphRAGPipeline(openai_api_key=api_key)
         self.graph_processing_started = False
 
         # Initialize Memory Manager
@@ -223,7 +232,7 @@ class SearchAgent:
                     db_user=settings.memory_db_user,
                     db_password=settings.memory_db_password,
                     model_name=settings.memory_model,
-                    openai_api_key=settings.openai_api_key,
+                    openai_api_key=api_key,
                     session_id=settings.memory_session_id
                 )
                 logger.info("Memory Manager initialized successfully")

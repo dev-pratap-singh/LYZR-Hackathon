@@ -22,6 +22,9 @@ Beautiful theme with smooth transitions, localStorage persistence, and optimized
 ### 🧠 **Smart Memory**
 Context-aware conversations that remember previous Q&A, instant answers from cache, 60-70% accuracy in complex queries.
 
+### 🔑 **Bring Your Own API Key**
+Use your own OpenAI API key for complete control over costs and usage. Keys are encrypted at rest with AES encryption and never stored on the server.
+
 </td>
 <td width="50%">
 
@@ -67,6 +70,15 @@ docker-compose up --build
 ---
 
 ## ✨ Core Features
+
+### 🔑 User API Key Management
+**Complete control over your OpenAI costs:**
+- **Bring Your Own Key**: Use your personal OpenAI API key
+- **Encrypted at Rest**: AES encryption with device-specific fingerprinting
+- **Never Server-Stored**: Keys stay in your browser's localStorage
+- **Zero Trust**: Server never persists your key, only uses it for requests
+- **Easy Setup**: Configure via Settings modal in the UI
+- **Fallback Support**: System can use environment key if user key not provided
 
 ### 🔍 Multi-Tool Search Agent
 4 intelligent search tools that auto-select or run in parallel:
@@ -304,7 +316,7 @@ docker-compose up --build
 
 ```env
 # API & Credentials
-OPENAI_API_KEY=sk-proj-your-key
+OPENAI_API_KEY=sk-proj-your-key    # Optional: Can be provided by users via UI
 POSTGRES_PASSWORD=your_password
 NEO4J_AUTH=neo4j/your_password
 
@@ -318,27 +330,63 @@ CHUNK_OVERLAP=500
 TOP_K_RESULTS=20
 ```
 
+### User API Key Setup
+
+Users can provide their own OpenAI API key through the UI:
+
+1. **Click Settings Icon** (⚙️) in the top-right corner
+2. **Enter Your OpenAI API Key** in the modal
+3. **Save** - Key is encrypted and stored in browser localStorage
+4. **Use the System** - All API calls use your key automatically
+
+**Security Features:**
+- 🔐 **AES Encryption** with browser fingerprint-based key derivation
+- 🏠 **Client-Side Storage** - Keys never leave your browser
+- 🔒 **Zero Server Persistence** - Backend receives keys via headers only
+- 🔄 **Easy Management** - Clear/update key anytime via Settings
+
 ---
 
 ## 📝 API Examples
 
+### With User-Provided API Key
+
 ```bash
-# Upload document
+# Upload document with your API key
+curl -X POST http://localhost:8000/api/rag/upload \
+  -H "X-OpenAI-API-Key: sk-proj-your-key-here" \
+  -F "file=@document.pdf"
+
+# Query with your API key
+curl -X POST http://localhost:8000/api/rag/query/stream \
+  -H "Content-Type: application/json" \
+  -H "X-OpenAI-API-Key: sk-proj-your-key-here" \
+  -d '{"query": "What is this about?", "document_id": "your-id"}'
+
+# Update graph with your API key
+curl -X POST http://localhost:8000/api/rag/query/stream \
+  -H "Content-Type: application/json" \
+  -H "X-OpenAI-API-Key: sk-proj-your-key-here" \
+  -d '{"query": "Create AI node and connect to Python, ML", "document_id": "your-id"}'
+```
+
+### Without User API Key (uses system default)
+
+```bash
+# Upload document (uses env OPENAI_API_KEY)
 curl -X POST http://localhost:8000/api/rag/upload \
   -F "file=@document.pdf"
 
-# Query with memory
+# Query without custom key
 curl -X POST http://localhost:8000/api/rag/query/stream \
   -H "Content-Type: application/json" \
   -d '{"query": "What is this about?", "document_id": "your-id"}'
 
-# Update graph (natural language)
-curl -X POST http://localhost:8000/api/rag/query/stream \
-  -d '{"query": "Create AI node and connect to Python, ML", "document_id": "your-id"}'
-
 # Clear memory
 curl -X DELETE http://localhost:8000/api/memory/clear
 ```
+
+**Note:** The `X-OpenAI-API-Key` header is optional. If not provided, the system falls back to the `OPENAI_API_KEY` from environment variables.
 
 Full API documentation: http://localhost:8000/docs
 
@@ -397,7 +445,12 @@ LYZR-Hackathon/
 ## 📜 Version History
 
 ### v2.0.0 (Current) - October 15, 2025
-Complete dark mode • Smart memory system • Memory-first strategy • Enhanced UI with white text
+**Major Features:**
+- 🔑 **Bring Your Own API Key** - User-provided OpenAI keys with AES encryption
+- 🌙 **Complete Dark Mode** - Beautiful theme with localStorage persistence
+- 🧠 **Smart Memory System** - Memory-first strategy with instant cached responses
+- 🎨 **Enhanced UI** - Pure white text in dark mode, improved markdown rendering
+- 🔒 **Zero-Trust Security** - API keys encrypted at rest, never stored on server
 
 ### v1.2.0 - October 13, 2025
 Natural language graph updates • 9 operations • Batch connections • Real-time refresh
