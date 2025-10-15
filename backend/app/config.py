@@ -75,6 +75,7 @@ class Settings(BaseSettings):
     memory_db_password: str = "rag_password"
     memory_approach: str = "external_llm"
     memory_model: str = "gpt-4o-mini"
+    memory_session_id: str = "default_session"  # Fixed session ID shared across all components
 
     # Redis Configuration
     redis_host: str = "redis"

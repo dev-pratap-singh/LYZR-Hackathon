@@ -34,7 +34,8 @@ def get_memory_manager() -> MemoryManager:
                 db_user=settings.memory_db_user,
                 db_password=settings.memory_db_password,
                 model_name=settings.memory_model,
-                openai_api_key=settings.openai_api_key
+                openai_api_key=settings.openai_api_key,
+                session_id=settings.memory_session_id
             )
             logger.info("Memory Manager initialized for API")
         except Exception as e:

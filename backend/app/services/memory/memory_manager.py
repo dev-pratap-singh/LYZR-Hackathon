@@ -90,30 +90,41 @@ class MemoryManager:
         """Get database cursor with connection check"""
         if self.conn.closed:
             self._connect_db()
+
+        # Rollback any aborted transactions
+        if self.conn.info.transaction_status == 3:  # TRANSACTION_STATUS_INERROR
+            self.conn.rollback()
+
         return self.conn.cursor(cursor_factory=RealDictCursor)
 
     def _initialize_memory_state(self):
         """Initialize memory state for the session"""
         try:
             cursor = self._get_cursor()
+            # Check if memory state already exists for this session
             cursor.execute("""
-                INSERT INTO memory_state (
-                    session_id, model_name, total_context_length,
-                    used_context_length, available_context_length,
-                    context_utilization_percentage, token_usage_stats,
-                    performance_metrics
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT DO NOTHING
-            """, (
-                self.session_id,
-                self.model_name,
-                self.model_config['context_length'],
-                0,
-                self.model_config['context_length'],
-                0.0,
-                Json({'input_tokens': 0, 'output_tokens': 0, 'total_cost': 0.0}),
-                Json({'compressions': 0, 'decompressions': 0, 'cache_hits': 0})
-            ))
+                SELECT id FROM memory_state WHERE session_id = %s LIMIT 1
+            """, (self.session_id,))
+
+            if cursor.fetchone() is None:
+                # Only insert if it doesn't exist
+                cursor.execute("""
+                    INSERT INTO memory_state (
+                        session_id, model_name, total_context_length,
+                        used_context_length, available_context_length,
+                        context_utilization_percentage, token_usage_stats,
+                        performance_metrics
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    self.session_id,
+                    self.model_name,
+                    self.model_config['context_length'],
+                    0,
+                    self.model_config['context_length'],
+                    0.0,
+                    Json({'input_tokens': 0, 'output_tokens': 0, 'total_cost': 0.0}),
+                    Json({'compressions': 0, 'decompressions': 0, 'cache_hits': 0})
+                ))
             self.conn.commit()
             cursor.close()
         except Exception as e:

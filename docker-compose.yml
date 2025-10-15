@@ -63,6 +63,7 @@ services:
       - ./storage:/app/storage
       - ./test:/app/test
       - ./memory/data:/app/memory_data
+      - ./memory/src:/app/memory/src
     depends_on:
       - postgres
       - pgvector
