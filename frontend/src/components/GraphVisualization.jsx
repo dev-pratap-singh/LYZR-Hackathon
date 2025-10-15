@@ -18,10 +18,27 @@ const GraphVisualization = ({ refreshTrigger = 0 }) => {
   const [linkDistance, setLinkDistance] = useState(350); // Increased default distance for better spacing
   const [chargeStrength, setChargeStrength] = useState(-1500); // Increased repulsion for better spacing
   const [isFullscreen, setIsFullscreen] = useState(false); // Fullscreen mode
+  const [isDarkMode, setIsDarkMode] = useState(false); // Track dark mode
 
   const svgRef = useRef(null);
   const simulationRef = useRef(null);
   const zoomBehaviorRef = useRef(null);
+
+  // Detect dark mode changes
+  useEffect(() => {
+    const checkDarkMode = () => {
+      setIsDarkMode(document.body.classList.contains('dark-mode'));
+    };
+
+    // Initial check
+    checkDarkMode();
+
+    // Watch for dark mode changes
+    const observer = new MutationObserver(checkDarkMode);
+    observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+
+    return () => observer.disconnect();
+  }, []);
 
   // Fetch graph data from backend
   useEffect(() => {
@@ -180,7 +197,7 @@ const GraphVisualization = ({ refreshTrigger = 0 }) => {
 
     const linkLabel = link.append('text')
       .attr('text-anchor', 'middle')
-      .attr('fill', '#475569')
+      .attr('fill', isDarkMode ? '#b0b0b0' : '#475569')
       .attr('font-size', '14px')
       .attr('font-weight', 'bold')
       .attr('dy', -5)
@@ -314,7 +331,7 @@ const GraphVisualization = ({ refreshTrigger = 0 }) => {
         simulationRef.current.stop();
       }
     };
-  }, [nodes, edges, linkDistance, chargeStrength, isFullscreen]);
+  }, [nodes, edges, linkDistance, chargeStrength, isFullscreen, isDarkMode]);
 
   const handleZoomIn = () => {
     if (!zoomBehaviorRef.current || !svgRef.current) return;

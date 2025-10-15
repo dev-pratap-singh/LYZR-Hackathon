@@ -1056,6 +1056,10 @@ class Neo4jService:
                 "error": str(e)
             }
 
+    async def get_total_nodes_count(self) -> int:
+        """Get total count of all nodes in the graph database"""
+        return await self.get_entity_count()
+
 
 # Global Neo4j service instance
 neo4j_service = Neo4jService()

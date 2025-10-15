@@ -66,6 +66,20 @@ class Settings(BaseSettings):
     default_search_tools: str = "auto"
     max_performance: bool = False  # Run all search tools in parallel
 
+    # Memory Management Configuration
+    memory_enabled: bool = True
+    memory_db_host: str = "postgres"
+    memory_db_port: int = 5432
+    memory_db_name: str = "rag_database"
+    memory_db_user: str = "rag_user"
+    memory_db_password: str = "rag_password"
+    memory_approach: str = "external_llm"
+    memory_model: str = "gpt-4o-mini"
+
+    # Redis Configuration
+    redis_host: str = "redis"
+    redis_port: int = 6379
+
     @property
     def elasticsearch_url(self) -> str:
         return f"http://{self.elasticsearch_host}:{self.elasticsearch_port}"
@@ -89,6 +103,10 @@ class Settings(BaseSettings):
     @property
     def neo4j_password(self) -> str:
         return self.neo4j_auth.split('/')[1]
+
+    @property
+    def memory_db_url(self) -> str:
+        return f"postgresql://{self.memory_db_user}:{self.memory_db_password}@{self.memory_db_host}:{self.memory_db_port}/{self.memory_db_name}"
 
 
 settings = Settings()

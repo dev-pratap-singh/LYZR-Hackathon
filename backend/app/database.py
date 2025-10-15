@@ -43,6 +43,11 @@ def init_databases():
         ])
         logger.info("✓ PostgreSQL database initialized")
 
+        # Initialize Memory Management tables
+        logger.info("Initializing Memory Management schema...")
+        _init_memory_schema()
+        logger.info("✓ Memory Management schema initialized")
+
         # Initialize PGVector with vector extension
         logger.info("Initializing PGVector database...")
         with pgvector_engine.connect() as conn:
@@ -74,6 +79,59 @@ def init_databases():
 
     except Exception as e:
         logger.error(f"Database initialization failed: {e}")
+        raise
+
+
+def _init_memory_schema():
+    """Initialize memory management schema with all tables and indexes"""
+    import os
+
+    try:
+        # Get the path to the SQL schema file
+        schema_file = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            'init_memory_schema.sql'
+        )
+
+        # Read the SQL file
+        with open(schema_file, 'r') as f:
+            sql_content = f.read()
+
+        # Create the update_updated_at_column function first (required for triggers)
+        with postgres_engine.connect() as conn:
+            conn.execute(text("""
+                CREATE OR REPLACE FUNCTION update_updated_at_column()
+                RETURNS TRIGGER AS $$
+                BEGIN
+                    NEW.updated_at = CURRENT_TIMESTAMP;
+                    RETURN NEW;
+                END;
+                $$ LANGUAGE plpgsql;
+            """))
+            conn.commit()
+            logger.info("✓ Created update_updated_at_column function")
+
+        # Execute the memory schema SQL
+        with postgres_engine.connect() as conn:
+            # Split by semicolon and execute each statement
+            statements = sql_content.split(';')
+            for statement in statements:
+                statement = statement.strip()
+                if statement:
+                    try:
+                        conn.execute(text(statement))
+                    except Exception as e:
+                        # Log but don't fail on individual statement errors
+                        # (e.g., if tables already exist)
+                        logger.debug(f"Statement execution note: {e}")
+
+            conn.commit()
+            logger.info("✓ Memory management tables and indexes created")
+
+    except FileNotFoundError:
+        logger.warning("Memory schema SQL file not found. Skipping memory table initialization.")
+    except Exception as e:
+        logger.error(f"Error initializing memory schema: {e}")
         raise
 
 

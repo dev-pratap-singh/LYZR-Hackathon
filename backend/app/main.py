@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 from app.api.rag_routes import router as rag_router
+from app.api.memory_routes import router as memory_router
 from app.config import settings
 from app.database import init_databases
 from app.services.elasticsearch_service import elasticsearch_service
@@ -76,6 +77,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(rag_router)
+app.include_router(memory_router)
 
 
 @app.get("/")
