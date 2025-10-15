@@ -4,7 +4,7 @@ Handles document upload, query processing, and streaming responses
 """
 import logging
 import os
-from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
+from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, Header
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, List, Literal
@@ -21,6 +21,7 @@ from app.services.neo4j_service import neo4j_service
 from app.services.graphrag_pipeline import GraphRAGPipeline
 from app.services.elasticsearch_service import elasticsearch_service
 from app.utils.document_helpers import process_document_pipeline
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -29,10 +30,32 @@ ProcessingMethod = Literal["pymupdf", "docling"]
 router = APIRouter(prefix="/api/rag", tags=["RAG System"])
 
 # Initialize services
-search_agent = SearchAgent()
 vector_store = VectorStoreService()
 doc_processor = DocumentProcessingService()
 bm25_service = BM25SearchService()
+
+
+# ==== Helper Functions ====
+def get_openai_api_key(x_openai_api_key: Optional[str] = Header(None)) -> str:
+    """
+    Get OpenAI API key from header or fallback to settings.
+
+    Args:
+        x_openai_api_key: Optional API key from X-OpenAI-API-Key header
+
+    Returns:
+        API key to use (user-provided or system default)
+    """
+    # Use user-provided key if available, otherwise fallback to settings
+    api_key = x_openai_api_key or settings.openai_api_key
+
+    if not api_key:
+        raise HTTPException(
+            status_code=400,
+            detail="OpenAI API key not provided. Please set X-OpenAI-API-Key header or configure OPENAI_API_KEY in environment."
+        )
+
+    return api_key
 
 
 # ==== Pydantic Models ====
@@ -59,7 +82,8 @@ class DocumentResponse(BaseModel):
 async def upload_document(
     file: UploadFile = File(...),
     method: ProcessingMethod = "pymupdf",
-    db: Session = Depends(get_postgres_session)
+    db: Session = Depends(get_postgres_session),
+    openai_api_key: str = Depends(get_openai_api_key)
 ):
     """
     Upload a PDF document and process it
@@ -103,7 +127,7 @@ async def upload_document(
 
         # Process document immediately with selected method
         try:
-            await process_document_pipeline(document, db, method=method)
+            await process_document_pipeline(document, db, method=method, openai_api_key=openai_api_key)
             logger.info(f"Document processed successfully with {method}: {document.id}")
         except Exception as e:
             logger.error(f"Processing failed: {e}")
@@ -136,7 +160,8 @@ async def upload_document(
 @router.post("/query/stream")
 async def query_stream(
     request: QueryRequest,
-    db: Session = Depends(get_postgres_session)
+    db: Session = Depends(get_postgres_session),
+    openai_api_key: str = Depends(get_openai_api_key)
 ):
     """
     Process query with streaming response
@@ -144,8 +169,14 @@ async def query_stream(
     - Generates embeddings for query
     - Performs vector search
     - Streams LLM response with reasoning
+
+    Headers:
+        X-OpenAI-API-Key: Optional user-provided OpenAI API key
     """
     try:
+        # Create SearchAgent with user-provided API key
+        search_agent = SearchAgent(openai_api_key=openai_api_key)
+
         # Ensure graph is processed for all documents (happens once on first query)
         await search_agent.ensure_graph_processed(db)
 
@@ -158,7 +189,7 @@ async def query_stream(
 
             # Process document if not already processed
             if not document.is_processed:
-                await process_document_pipeline(document, db)
+                await process_document_pipeline(document, db, openai_api_key=openai_api_key)
 
             document_id = request.document_id
 
@@ -235,7 +266,8 @@ async def get_document(
 @router.post("/documents/{document_id}/process")
 async def process_document(
     document_id: str,
-    db: Session = Depends(get_postgres_session)
+    db: Session = Depends(get_postgres_session),
+    openai_api_key: str = Depends(get_openai_api_key)
 ):
     """Manually trigger document processing"""
     try:
@@ -251,7 +283,7 @@ async def process_document(
                 "document_id": str(document.id)
             }
 
-        await process_document_pipeline(document, db)
+        await process_document_pipeline(document, db, openai_api_key=openai_api_key)
 
         return {
             "success": True,
@@ -326,7 +358,8 @@ async def delete_document(
 @router.post("/documents/{document_id}/process-graph")
 async def process_document_graph(
     document_id: str,
-    db: Session = Depends(get_postgres_session)
+    db: Session = Depends(get_postgres_session),
+    openai_api_key: str = Depends(get_openai_api_key)
 ):
     """
     Process document with GraphRAG to extract knowledge graph
@@ -334,6 +367,7 @@ async def process_document_graph(
     Args:
         document_id: Document ID to process
         db: Database session
+        openai_api_key: User-provided OpenAI API key
 
     Returns:
         Graph processing status and statistics
@@ -356,8 +390,8 @@ async def process_document_graph(
         with open(document.text_filepath, 'r', encoding='utf-8') as f:
             text_content = f.read()
 
-        # Initialize GraphRAG pipeline for this request
-        graphrag_pipeline = GraphRAGPipeline()
+        # Initialize GraphRAG pipeline for this request with user-provided API key
+        graphrag_pipeline = GraphRAGPipeline(openai_api_key=openai_api_key)
 
         # Process with GraphRAG (chunks text and extracts entities/relationships from each chunk)
         graph_result = await graphrag_pipeline.process_document(
