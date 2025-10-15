@@ -22,13 +22,14 @@ logger = logging.getLogger(__name__)
 class GraphRAGPipeline:
     """Pipeline for extracting knowledge graph from text using GraphRAG"""
 
-    def __init__(self, chunk_size: int = 1200, chunk_overlap: int = 400):
+    def __init__(self, chunk_size: int = 1200, chunk_overlap: int = 400, openai_api_key: str = None):
         """
         Initialize GraphRAG Pipeline
 
         Args:
             chunk_size: Size of text chunks for entity extraction (default: 1200)
             chunk_overlap: Overlap between chunks to capture relationships (default: 400)
+            openai_api_key: Optional user-provided OpenAI API key
         """
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
@@ -36,7 +37,7 @@ class GraphRAGPipeline:
         self.llm = ChatOpenAI(
             model=settings.graphrag_llm_model,
             temperature=0,
-            openai_api_key=settings.openai_api_key
+            openai_api_key=openai_api_key or settings.openai_api_key
         )
 
         # Initialize text splitter for chunking large documents

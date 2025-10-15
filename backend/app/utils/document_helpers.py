@@ -27,7 +27,8 @@ ProcessingMethod = Literal["pymupdf", "docling"]
 async def process_document_pipeline(
     document: Document,
     db: Session,
-    method: ProcessingMethod = "pymupdf"
+    method: ProcessingMethod = "pymupdf",
+    openai_api_key: str = None
 ) -> None:
     """
     Process document: extract text, chunk, embed, store
@@ -36,12 +37,13 @@ async def process_document_pipeline(
         document: Document model instance
         db: Database session
         method: Processing method to use ("pymupdf" or "docling")
+        openai_api_key: Optional user-provided OpenAI API key
 
     Raises:
         Exception: If processing fails
     """
     doc_processor = DocumentProcessingService()
-    embedding_service = EmbeddingService()
+    embedding_service = EmbeddingService(openai_api_key=openai_api_key)
     vector_store = VectorStoreService()
     bm25_service = BM25SearchService()
 
@@ -108,8 +110,8 @@ async def process_document_pipeline(
             try:
                 logger.info(f"🕸️ Starting GraphRAG processing for document {document.id}...")
 
-                # Initialize GraphRAG pipeline
-                graphrag_pipeline = GraphRAGPipeline()
+                # Initialize GraphRAG pipeline with user-provided API key
+                graphrag_pipeline = GraphRAGPipeline(openai_api_key=openai_api_key)
 
                 # Read extracted text
                 with open(document.text_filepath, 'r', encoding='utf-8') as f:

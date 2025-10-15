@@ -4,6 +4,8 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import './App.css';
 import GraphVisualization from './components/GraphVisualization';
+import SettingsModal from './components/SettingsModal';
+import { loadApiKey } from './utils/encryption';
 
 const API_URL = 'http://localhost:8000';
 
@@ -28,6 +30,7 @@ function App() {
     const saved = localStorage.getItem('darkMode');
     return saved ? JSON.parse(saved) : false;
   });
+  const [showSettings, setShowSettings] = useState(false);
 
   const messagesEndRef = useRef(null);
   const reasoningEndRef = useRef(null);
@@ -112,8 +115,21 @@ function App() {
     setUploadStatus('⏳ Uploading and processing...');
 
     try {
+      // Get user's API key from encrypted storage
+      const userApiKey = loadApiKey();
+
+      // Build headers with optional API key
+      const headers = {
+        'Content-Type': 'multipart/form-data'
+      };
+
+      // Add X-OpenAI-API-Key header if user has provided their own key
+      if (userApiKey) {
+        headers['X-OpenAI-API-Key'] = userApiKey;
+      }
+
       const response = await axios.post(`${API_URL}/api/rag/upload`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
+        headers: headers
       });
 
       setUploadStatus(`✅ ${response.data.message}`);
@@ -142,9 +158,22 @@ function App() {
     startTimeRef.current = Date.now();
 
     try {
+      // Get user's API key from encrypted storage
+      const userApiKey = loadApiKey();
+
+      // Build headers with optional API key
+      const headers = {
+        'Content-Type': 'application/json'
+      };
+
+      // Add X-OpenAI-API-Key header if user has provided their own key
+      if (userApiKey) {
+        headers['X-OpenAI-API-Key'] = userApiKey;
+      }
+
       const response = await fetch(`${API_URL}/api/rag/query/stream`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: headers,
         body: JSON.stringify({
           query: query,
           document_id: selectedDocument || documents[0]?.id
@@ -366,6 +395,13 @@ function App() {
           </div>
           <div className="header-right">
             <button
+              className="settings-button"
+              onClick={() => setShowSettings(true)}
+              title="Settings"
+            >
+              ⚙️ Settings
+            </button>
+            <button
               className="theme-toggle-button"
               onClick={toggleDarkMode}
               title={darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
@@ -449,7 +485,16 @@ function App() {
 
           {/* Chat Panel */}
           <div className="center-panel">
-            <h2>💬 Chat</h2>
+            <div className="chat-header">
+              <h2>💬 Chat</h2>
+              <button
+                className="clear-memory-button-small"
+                onClick={clearMemory}
+                title="Clear all memory and reset token usage"
+              >
+                🗑️ Clear Memory
+              </button>
+            </div>
 
             <div className="messages-container">
               {messages.length === 0 ? (
@@ -521,18 +566,7 @@ function App() {
           {/* Reasoning/Memory Panel */}
           <div className="right-panel">
             <div className="panel-header">
-              <div className="panel-title-section">
-                <h2>{showMemory ? '🧠 Memory State' : '🔍 Reasoning'}</h2>
-                {showMemory && (
-                  <button
-                    className="clear-memory-button-small"
-                    onClick={clearMemory}
-                    title="Clear all memory and reset token usage"
-                  >
-                    🗑️
-                  </button>
-                )}
-              </div>
+              <h2>{showMemory ? '🧠 Memory State' : '🔍 Reasoning'}</h2>
               <label className="toggle-switch">
                 <input
                   type="checkbox"
@@ -741,6 +775,12 @@ function App() {
           </div>
         </div>
       )}
+
+      {/* Settings Modal */}
+      <SettingsModal
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
+      />
     </div>
   );
 }
