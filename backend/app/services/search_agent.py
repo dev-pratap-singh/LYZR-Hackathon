@@ -26,6 +26,7 @@ from app.services.graphrag_pipeline import GraphRAGPipeline
 from app.services.neo4j_service import neo4j_service
 from app.services.elasticsearch_service import elasticsearch_service
 from app.services.memory import MemoryManager
+from app.services.entity_validator import get_entity_validator
 
 logger = logging.getLogger(__name__)
 
@@ -922,6 +923,15 @@ Return ONLY valid JSON with the operation details, no explanation."""
 3. NEVER answer from your own knowledge - ALWAYS search the uploaded documents first.
 4. DO NOT just describe what you will do - ACTUALLY CALL THE TOOL.
 
+**ENTITY CONSISTENCY VERIFICATION (POST-RETRIEVAL CHECK):**
+
+5. **CRITICAL**: After retrieving information, VERIFY that your answer refers ONLY to entities mentioned in the retrieved context.
+6. If the user asks about a person/entity (e.g., "Tell me about John"), check that "John" actually appears in the retrieved passages.
+7. NEVER substitute information about one person for another person with a similar context.
+8. If the retrieved context doesn't contain information about the specific entity asked about, respond:
+   "I don't have information about [Entity Name] in the retrieved documents. The query may refer to an entity not present in the knowledge base."
+9. When presenting information, ALWAYS verify the entity name matches before including it in your answer.
+
 **Tool Selection:**
 
 **CRITICAL: When user explicitly requests a specific tool, YOU MUST USE THAT TOOL!**
@@ -1095,6 +1105,13 @@ Use **filter_search** for:
 
             # Build a comprehensive context from all tools
             synthesis_prompt = f"""You are an AI assistant synthesizing information from multiple search sources to answer a user's question.
+
+**ENTITY CONSISTENCY VERIFICATION:**
+- CRITICAL: Verify that your answer refers ONLY to entities mentioned in the retrieved search results below.
+- If the user asks about a specific person/entity, check that this entity actually appears in the search results.
+- NEVER substitute information about one person for another with similar context.
+- If the search results don't contain information about the specific entity asked, respond:
+  "I don't have information about [Entity Name] in the retrieved documents."
 
 **User's Question:** {query}
 
@@ -1585,6 +1602,50 @@ Answer:"""
             # Store document_id so tools can access it
             self.current_document_id = document_id
             logger.info(f"Processing query with document_id: {document_id}, MAX_PERFORMANCE={settings.max_performance}")
+
+            # ===== ENTITY VALIDATION: Check if mentioned entities exist in knowledge graph =====
+            # This must happen BEFORE memory check to catch invalid entities even if they're in memory
+            try:
+                entity_validator = get_entity_validator()
+                validation_result = await entity_validator.validate_entities_exist(query, document_id)
+
+                if not validation_result['valid']:
+                    # Entity mentioned in query doesn't exist in knowledge graph
+                    logger.warning(f"Entity validation failed: {validation_result['missing_entities']}")
+
+                    # Emit validation error event
+                    validation_error_event = {
+                        "type": "final_answer",
+                        "content": validation_result['error_message'],
+                        "metadata": {
+                            "validation_failed": True,
+                            "mentioned_entities": validation_result['mentioned_entities'],
+                            "missing_entities": validation_result['missing_entities']
+                        },
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    yield f"data: {json.dumps(validation_error_event)}\n\n"
+
+                    # Return early - don't proceed with search
+                    return
+
+                elif validation_result['mentioned_entities']:
+                    # Entities mentioned and they exist - emit confirmation
+                    logger.info(f"Entity validation passed: {validation_result['mentioned_entities']}")
+                    validation_pass_event = {
+                        "type": "thinking",
+                        "content": f"✅ Verified: Entities {', '.join(validation_result['mentioned_entities'])} exist in knowledge base",
+                        "metadata": {
+                            "validation_passed": True,
+                            "entities": validation_result['mentioned_entities']
+                        },
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    yield f"data: {json.dumps(validation_pass_event)}\n\n"
+
+            except Exception as e:
+                logger.error(f"Error in entity validation: {e}", exc_info=True)
+                # Continue with search even if validation fails
 
             # ===== MEMORY-FIRST STRATEGY: Check memory before searching documents =====
             if self.memory_manager:
