@@ -1509,6 +1509,11 @@ body.dark-mode .graph-canvas-wrapper {
   max-width: 100%;
 }
 
+.fullscreen .graph-canvas-wrapper {
+  border-radius: 8px;
+  max-width: 100%;
+}
+
 .graph-canvas {
   display: block;
   background: #ffffff;
