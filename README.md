@@ -40,6 +40,98 @@ Pure white text in dark mode, markdown rendering with code blocks, smooth animat
 
 ---
 
+## 📸 Demo & Screenshots
+
+### 🔑 Bring Your Own API Key
+
+<div align="center">
+<img src="frontend/public/user_openai_api_keys.png" alt="User API Key Configuration" width="800"/>
+<br/>
+<em>Secure API key management - Encrypted at rest, never stored on server</em>
+</div>
+
+---
+
+### 💬 Chat Interface & Document Upload
+
+<div align="center">
+<img src="frontend/public/Seach_Box_&_Doc_Upload.png" alt="Search Box and Document Upload" width="800"/>
+<br/>
+<em>Intuitive UI with drag-and-drop PDF upload and real-time search</em>
+</div>
+
+---
+
+### 🤖 Multi-Tool Search Agent in Action
+
+<div align="center">
+<img src="frontend/public/Search_Agent_In_Action.png" alt="Search Agent in Action" width="800"/>
+<br/>
+<em>Agent intelligently selects tools and streams reasoning steps</em>
+</div>
+
+---
+
+### 🧠 Smart Memory Management & Token Tracking
+
+<div align="center">
+<img src="frontend/public/Memory_state_2_track_cost_usage.png" alt="Memory State and Token Tracking" width="800"/>
+<br/>
+<em>Real-time memory state visualization with cost tracking and context utilization</em>
+</div>
+
+---
+
+### 💭 Reasoning with Memory Integration
+
+<div align="center">
+<img src="frontend/public/reasoning_integrated_with_smart_memory_management.png" alt="Reasoning with Smart Memory" width="800"/>
+<br/>
+<em>Transparent reasoning process with memory-first strategy for instant answers</em>
+</div>
+
+---
+
+### 🕸️ Knowledge Graph Visualization
+
+<div align="center">
+<img src="frontend/public/Graph_Cluster_With_Clickable_Nodes.png" alt="Interactive Knowledge Graph" width="800"/>
+<br/>
+<em>Interactive D3.js graph with clickable nodes and relationship exploration</em>
+</div>
+
+---
+
+### 📊 Entities & Relationships Data
+
+<div align="center">
+<img src="frontend/public/Entities & Relationship Tables.png" alt="Entities and Relationships" width="800"/>
+<br/>
+<em>Detailed entity and relationship tables extracted from documents</em>
+</div>
+
+---
+
+### 🌐 Multi-Document Knowledge Graph
+
+<div align="center">
+<img src="frontend/public/Multi_Document_Graph.png" alt="Multi-Document Graph" width="800"/>
+<br/>
+<em>Unified knowledge graph spanning multiple documents with cross-document connections</em>
+</div>
+
+---
+
+### 🔄 3-Pass GraphRAG Enrichment
+
+<div align="center">
+<img src="frontend/public/Improved_graph_creation_with_3_passes.png" alt="3-Pass Graph Creation" width="800"/>
+<br/>
+<em>Multi-pass enrichment: Initial extraction → Missing entities → Indirect relationships</em>
+</div>
+
+---
+
 ## 🚀 Quick Start
 
 ```bash
