@@ -22,10 +22,27 @@ class EmbeddingService:
         Args:
             openai_api_key: Optional OpenAI API key. If not provided, uses settings.openai_api_key
         """
-        api_key = openai_api_key or settings.openai_api_key
-        self.client = AsyncOpenAI(api_key=api_key)
+        self.api_key = openai_api_key or settings.openai_api_key
+        self._client = None  # Lazy initialization
         self.model = settings.openai_embedding_model
         self.embedding_dimension = 1536  # for text-embedding-3-small
+
+    @property
+    def client(self):
+        """Lazy initialization of OpenAI client"""
+        if self._client is None:
+            if not self.api_key:
+                error_msg = (
+                    "⚠️  OPENAI_API_KEY is not configured. "
+                    "Embedding generation requires an OpenAI API key. "
+                    "Please set the OPENAI_API_KEY environment variable or provide an API key when creating the service."
+                )
+                logger.error(error_msg)
+                raise ValueError(error_msg)
+
+            logger.info("Initializing OpenAI embedding client")
+            self._client = AsyncOpenAI(api_key=self.api_key)
+        return self._client
 
     async def generate_embedding(self, text: str) -> List[float]:
         """

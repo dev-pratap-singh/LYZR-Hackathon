@@ -1,0 +1,165 @@
+version: '3.8'
+
+services:
+  frontend:
+    image: rag-frontend:latest
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    environment:
+      - REACT_APP_BACKEND_URL=http://localhost:8000
+    depends_on:
+      - backend
+    networks:
+      - rag-network
+
+  backend:
+    image: rag-backend:latest
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_HOST=${POSTGRES_HOST}
+      - POSTGRES_PORT=${POSTGRES_PORT}
+      - PGVECTOR_HOST=${PGVECTOR_HOST}
+      - PGVECTOR_PORT=${PGVECTOR_PORT}
+      - PGVECTOR_DB=${PGVECTOR_DB}
+      - NEO4J_HOST=${NEO4J_HOST}
+      - NEO4J_PORT=${NEO4J_PORT}
+      - NEO4J_AUTH=${NEO4J_AUTH}
+      - ELASTICSEARCH_HOST=${ELASTICSEARCH_HOST}
+      - ELASTICSEARCH_PORT=${ELASTICSEARCH_PORT}
+      - ELASTICSEARCH_INDEX_NAME=${ELASTICSEARCH_INDEX_NAME}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL}
+      - OPENAI_EMBEDDING_MODEL=${OPENAI_EMBEDDING_MODEL}
+      - CHUNK_SIZE=${CHUNK_SIZE}
+      - CHUNK_OVERLAP=${CHUNK_OVERLAP}
+      - TOP_K_RESULTS=${TOP_K_RESULTS}
+      - STORAGE_PATH=${STORAGE_PATH}
+      - ENABLE_VECTOR_SEARCH=${ENABLE_VECTOR_SEARCH}
+      - ENABLE_GRAPH_SEARCH=${ENABLE_GRAPH_SEARCH}
+      - ENABLE_FILTER_SEARCH=${ENABLE_FILTER_SEARCH}
+      - DEFAULT_SEARCH_TOOLS=${DEFAULT_SEARCH_TOOLS}
+      - MAX_PERFORMANCE=${MAX_PERFORMANCE}
+      - MEMORY_ENABLED=true
+      - MEMORY_DB_HOST=${POSTGRES_HOST}
+      - MEMORY_DB_PORT=${POSTGRES_PORT}
+      - MEMORY_DB_NAME=${POSTGRES_DB}
+      - MEMORY_DB_USER=${POSTGRES_USER}
+      - MEMORY_DB_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - ./storage:/app/storage
+    depends_on:
+      - postgres
+      - pgvector
+      - neo4j
+      - elasticsearch
+      - redis
+    networks:
+      - rag-network
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_data_prod:/var/lib/postgresql/data
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  pgvector:
+    image: pgvector/pgvector:pg15
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=vector_db
+    ports:
+      - "5435:5432"
+    volumes:
+      - pgvector_data_prod:/var/lib/postgresql/data
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d vector_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  neo4j:
+    image: neo4j:5.12
+    environment:
+      - NEO4J_AUTH=${NEO4J_AUTH}
+      - NEO4J_PLUGINS=["apoc", "graph-data-science"]
+    ports:
+      - "${NEO4J_HTTP_PORT:-7474}:7474"
+      - "${NEO4J_PORT:-7687}:7687"
+    volumes:
+      - neo4j_data_prod:/data
+      - neo4j_logs_prod:/logs
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p neo4j_password 'RETURN 1'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    volumes:
+      - elasticsearch_data_prod:/usr/share/elasticsearch/data
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: rag_redis_prod
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data_prod:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - rag-network
+
+networks:
+  rag-network:
+    driver: bridge
+
+volumes:
+  postgres_data_prod:
+  pgvector_data_prod:
+  neo4j_data_prod:
+  neo4j_logs_prod:
+  elasticsearch_data_prod:
+  redis_data_prod:

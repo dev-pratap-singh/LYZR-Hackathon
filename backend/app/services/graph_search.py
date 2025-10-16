@@ -18,13 +18,30 @@ class GraphSearchService:
 
     def __init__(self):
         self.neo4j = neo4j_service
-        self.llm = ChatOpenAI(
-            model=settings.graphrag_llm_model,
-            temperature=0,
-            openai_api_key=settings.openai_api_key
-        )
+        self._llm = None  # Lazy initialization
 
         logger.info("GraphSearchService initialized with enhanced traversal capabilities")
+
+    @property
+    def llm(self):
+        """Lazy initialization of LLM client"""
+        if self._llm is None:
+            if not settings.openai_api_key:
+                error_msg = (
+                    "⚠️  OPENAI_API_KEY is not configured. "
+                    "AI-powered graph search features require an OpenAI API key. "
+                    "Please set the OPENAI_API_KEY environment variable or add your API key via the settings."
+                )
+                logger.error(error_msg)
+                raise ValueError(error_msg)
+
+            logger.info("Initializing OpenAI client for graph search")
+            self._llm = ChatOpenAI(
+                model=settings.graphrag_llm_model,
+                temperature=0,
+                openai_api_key=settings.openai_api_key
+            )
+        return self._llm
 
     async def generate_cypher_query(self, natural_language_query: str) -> str:
         """

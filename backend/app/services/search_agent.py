@@ -191,20 +191,11 @@ class SearchAgent:
             openai_api_key: Optional OpenAI API key. If not provided, uses settings.openai_api_key
         """
         # Use provided key or fallback to settings
-        api_key = openai_api_key or settings.openai_api_key
-
-        # Initialize LLM with streaming support
-        self.llm = ChatOpenAI(
-            model=settings.openai_model,
-            temperature=0,  # Zero temperature for more deterministic, factual responses
-            openai_api_key=api_key,
-            streaming=True,
-            timeout=300,  # 5 minute timeout for OpenAI API calls
-            request_timeout=300  # 5 minute request timeout
-        )
+        self.api_key = openai_api_key or settings.openai_api_key
+        self._llm = None  # Lazy initialization
 
         # Initialize search services with the same API key
-        self.embedding_service = EmbeddingService(openai_api_key=api_key)
+        self.embedding_service = EmbeddingService(openai_api_key=self.api_key)
         self.vector_store = VectorStoreService()
         self.bm25_search = BM25SearchService()
         self.reranker = RerankerService()
@@ -218,7 +209,7 @@ class SearchAgent:
         self.tools = []
 
         # GraphRAG pipeline for processing documents with user-provided API key
-        self.graphrag_pipeline = GraphRAGPipeline(openai_api_key=api_key)
+        self.graphrag_pipeline = GraphRAGPipeline(openai_api_key=self.api_key)
         self.graph_processing_started = False
 
         # Initialize Memory Manager
@@ -232,7 +223,7 @@ class SearchAgent:
                     db_user=settings.memory_db_user,
                     db_password=settings.memory_db_password,
                     model_name=settings.memory_model,
-                    openai_api_key=api_key,
+                    openai_api_key=self.api_key,
                     session_id=settings.memory_session_id
                 )
                 logger.info("Memory Manager initialized successfully")
@@ -241,6 +232,30 @@ class SearchAgent:
                 self.memory_manager = None
 
         logger.info("Multi-Tool Search Agent initialized")
+
+    @property
+    def llm(self):
+        """Lazy initialization of LLM client"""
+        if self._llm is None:
+            if not self.api_key:
+                error_msg = (
+                    "⚠️  OPENAI_API_KEY is not configured. "
+                    "AI-powered search features require an OpenAI API key. "
+                    "Please set the OPENAI_API_KEY environment variable or provide an API key when creating the SearchAgent."
+                )
+                logger.error(error_msg)
+                raise ValueError(error_msg)
+
+            logger.info("Initializing OpenAI LLM client for search agent")
+            self._llm = ChatOpenAI(
+                model=settings.openai_model,
+                temperature=0,  # Zero temperature for more deterministic, factual responses
+                openai_api_key=self.api_key,
+                streaming=True,
+                timeout=300,  # 5 minute timeout for OpenAI API calls
+                request_timeout=300  # 5 minute request timeout
+            )
+        return self._llm
 
     async def ensure_graph_processed(self, db_session):
         """
