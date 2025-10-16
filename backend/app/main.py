@@ -1,4 +1,5 @@
 import logging
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
@@ -67,9 +68,18 @@ app = FastAPI(
 )
 
 # CORS configuration
+# Get allowed origins from environment variable (comma-separated) or use defaults
+allowed_origins_str = os.getenv(
+    "ALLOWED_ORIGINS",
+    "http://localhost:3000,http://localhost:8000"
+)
+allowed_origins = [origin.strip() for origin in allowed_origins_str.split(",")]
+
+logger.info(f"CORS enabled for origins: {allowed_origins}")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:8000"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

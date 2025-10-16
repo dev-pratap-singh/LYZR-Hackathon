@@ -2,8 +2,9 @@ import { useState, useEffect, useRef } from 'react';
 import * as d3 from 'd3';
 import { ZoomIn, ZoomOut, Maximize2, Search, Minimize2 } from 'lucide-react';
 import axios from 'axios';
+import { API_URL } from '../config';
 
-const API_URL = 'http://localhost:8000';
+// API_URL now comes from config.js (supports environment variables)
 
 const GraphVisualization = ({ refreshTrigger = 0 }) => {
   const [nodes, setNodes] = useState([]);

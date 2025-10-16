@@ -569,8 +569,128 @@ Special thanks to the team for organizing this hackathon. If I don't win, I'd lo
 
 ---
 
+## 🚂 Railway Full-Stack Deployment
+
+**Deploy both backend and frontend on Railway for a complete production setup!**
+
+### 🚀 Quick Deploy (Automated)
+
+We've created an automated deployment script for you:
+
+```bash
+# 1. Install Railway CLI
+npm i -g @railway/cli
+
+# 2. Login to Railway
+railway login
+
+# 3. Run the deployment script
+./deploy-railway.sh
+
+# 4. Follow the prompts - Done! 🎉
+```
+
+The script will:
+- ✅ Deploy backend with all 5 databases
+- ✅ Deploy frontend with optimized nginx build
+- ✅ Configure environment variables
+- ✅ Set up CORS automatically
+- ✅ Provide you with live URLs
+
+### 📚 Documentation
+
+| Document | Description |
+|----------|-------------|
+| **[DEPLOY_QUICKSTART.md](DEPLOY_QUICKSTART.md)** | Quick reference guide (5 min read) |
+| **[RAILWAY_DEPLOYMENT.md](RAILWAY_DEPLOYMENT.md)** | Complete step-by-step guide (15 min read) |
+| **`deploy-railway.sh`** | Automated deployment script |
+
+### 🎯 What Gets Deployed
+
+**Backend Service:**
+- FastAPI application
+- PostgreSQL (metadata + memory)
+- PGVector (embeddings)
+- Neo4j (knowledge graph)
+- Elasticsearch (search)
+- Redis (caching)
+
+**Frontend Service:**
+- React production build
+- Nginx web server
+- Optimized assets with gzip
+- Security headers
+
+### ⚙️ Prerequisites
+
+- Railway account at [railway.app](https://railway.app)
+- Railway CLI: `npm i -g @railway/cli`
+- Git repository committed
+
+### 💰 Cost Estimate
+
+**Total: ~$12-20/month**
+- Backend (5 services): ~$10-15/month
+- Frontend (nginx): ~$2-5/month
+
+**Free Tier Available:**
+- Hobby Plan: $5/month with $5 credit
+- Perfect for testing!
+
+### 🔧 Manual Deployment
+
+If you prefer manual control, see [RAILWAY_DEPLOYMENT.md](RAILWAY_DEPLOYMENT.md) for detailed step-by-step instructions.
+
+### ✅ Post-Deployment
+
+After deployment completes:
+
+1. **Test Backend Health:**
+   ```bash
+   curl https://YOUR_BACKEND_URL/health
+   ```
+
+2. **Open Frontend:**
+   ```bash
+   open https://YOUR_FRONTEND_URL
+   ```
+
+3. **Configure API Key** (optional):
+   - Click Settings ⚙️ in UI
+   - Enter your OpenAI API key
+   - Start using the system!
+
+### 🔍 Troubleshooting
+
+Quick fixes for common issues:
+
+| Issue | Solution |
+|-------|----------|
+| CORS errors | Update `ALLOWED_ORIGINS` in backend |
+| Backend won't start | Check `railway logs` for errors |
+| Frontend blank page | Verify `REACT_APP_API_URL` is set |
+| Database errors | Run `railway restart` |
+
+**Detailed troubleshooting:** See [RAILWAY_DEPLOYMENT.md](RAILWAY_DEPLOYMENT.md#troubleshooting)
+
+### 🔄 Updating Deployment
+
+```bash
+# Option 1: Auto-deploy (recommended)
+# Connect Railway to GitHub in dashboard
+# Every git push triggers deployment
+
+# Option 2: Manual deploy
+git push origin main
+railway up
+```
+
+---
+
 <div align="center">
 
-**Last Updated**: October 15, 2025 • **Status**: ✅ Production Ready • **Version**: 2.0.0
+**Last Updated**: October 16, 2025 • **Status**: ✅ Production Ready • **Version**: 2.0.0
+
+**🚂 Railway Deployment Ready** • **Cloud-Native Architecture** • **User API Keys Supported**
 
 </div>

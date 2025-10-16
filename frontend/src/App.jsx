@@ -6,8 +6,9 @@ import './App.css';
 import GraphVisualization from './components/GraphVisualization';
 import SettingsModal from './components/SettingsModal';
 import { loadApiKey } from './utils/encryption';
+import { API_URL } from './config';
 
-const API_URL = 'http://localhost:8000';
+// API_URL now comes from config.js (supports environment variables)
 
 function App() {
   // State management
