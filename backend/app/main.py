@@ -66,14 +66,19 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS configuration - Allow local development and Azure Container Apps
+# CORS configuration - Dynamically loaded from environment variable
+# This allows CORS origins to be configured at deployment time without code changes
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$|^https://.*\.azurecontainerapps\.io$",
+    allow_origins=settings.cors_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
+
+# Log CORS configuration for debugging
+logger.info(f"CORS enabled for origins: {settings.cors_allowed_origins}")
 
 # Include routers
 app.include_router(rag_router)

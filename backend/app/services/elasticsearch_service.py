@@ -25,44 +25,46 @@ class ElasticsearchService:
 
         logger.info(f"ElasticsearchService initialized with URL: {self.es_url}")
 
-    def _get_client(self) -> Elasticsearch:
+    def _get_client(self) -> Optional[Elasticsearch]:
         """Get or create synchronous Elasticsearch client"""
         if self.client is None:
             try:
                 self.client = Elasticsearch(
                     [self.es_url],
-                    request_timeout=30,
-                    max_retries=3,
-                    retry_on_timeout=True
+                    request_timeout=5,  # Reduced timeout for faster failures
+                    max_retries=1,  # Reduced retries to avoid long waits
+                    retry_on_timeout=False
                 )
-                # Test connection
+                # Test connection with short timeout
                 if self.client.ping():
                     logger.info("Successfully connected to Elasticsearch")
                 else:
-                    logger.error("Failed to ping Elasticsearch")
+                    logger.warning("Failed to ping Elasticsearch - service may not be ready")
+                    self.client = None
             except Exception as e:
-                logger.error(f"Error connecting to Elasticsearch: {e}")
-                raise
+                logger.warning(f"Elasticsearch not available: {e}")
+                self.client = None
         return self.client
 
-    async def _get_async_client(self) -> AsyncElasticsearch:
+    async def _get_async_client(self) -> Optional[AsyncElasticsearch]:
         """Get or create async Elasticsearch client"""
         if self.async_client is None:
             try:
                 self.async_client = AsyncElasticsearch(
                     [self.es_url],
-                    request_timeout=30,
-                    max_retries=3,
-                    retry_on_timeout=True
+                    request_timeout=5,  # Reduced timeout for faster failures
+                    max_retries=1,  # Reduced retries to avoid long waits
+                    retry_on_timeout=False
                 )
-                # Test connection
+                # Test connection with short timeout
                 if await self.async_client.ping():
                     logger.info("Successfully connected to Elasticsearch (async)")
                 else:
-                    logger.error("Failed to ping Elasticsearch (async)")
+                    logger.warning("Failed to ping Elasticsearch (async) - service may not be ready")
+                    self.async_client = None
             except Exception as e:
-                logger.error(f"Error connecting to Elasticsearch (async): {e}")
-                raise
+                logger.warning(f"Elasticsearch not available (async): {e}")
+                self.async_client = None
         return self.async_client
 
     def create_index(self) -> bool:
@@ -74,6 +76,11 @@ class ElasticsearchService:
         """
         try:
             client = self._get_client()
+
+            # If client is None, Elasticsearch is not available
+            if client is None:
+                logger.warning("Elasticsearch client not available, skipping index creation")
+                return False
 
             # Check if index already exists
             if client.indices.exists(index=self.index_name):

@@ -1,9 +1,9 @@
 """
-Database connection and initialization
+Database connection and initialization with support for Azure managed services
 """
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
-from sqlalchemy.pool import NullPool
+from sqlalchemy.pool import NullPool, QueuePool
 from contextlib import contextmanager
 from typing import Generator
 import logging
@@ -14,19 +14,83 @@ from app.models import Base
 logger = logging.getLogger(__name__)
 
 
+def _create_postgres_engine():
+    """
+    Create PostgreSQL engine with appropriate pooling strategy
+    based on deployment environment
+    """
+    pool_settings = settings.get_database_connection_pool_settings()
+
+    if settings.is_azure_deployment():
+        # Use connection pooling for Azure (production)
+        logger.info(f"Creating PostgreSQL engine for Azure with connection pooling: {pool_settings}")
+        engine = create_engine(
+            settings.postgres_url,
+            poolclass=QueuePool,
+            pool_size=pool_settings["pool_size"],
+            max_overflow=pool_settings["max_overflow"],
+            pool_timeout=pool_settings["pool_timeout"],
+            pool_recycle=pool_settings["pool_recycle"],
+            pool_pre_ping=pool_settings["pool_pre_ping"],
+            echo=False,
+            connect_args={
+                "connect_timeout": 10,
+                "options": "-c statement_timeout=30000"  # 30 second query timeout
+            }
+        )
+    else:
+        # Use NullPool for local development (simpler for testing)
+        logger.info("Creating PostgreSQL engine for local development (NullPool)")
+        engine = create_engine(
+            settings.postgres_url,
+            poolclass=NullPool,
+            echo=False
+        )
+
+    return engine
+
+
+def _create_pgvector_engine():
+    """
+    Create PGVector engine with appropriate pooling strategy
+    based on deployment environment
+    """
+    pool_settings = settings.get_database_connection_pool_settings()
+
+    if settings.is_azure_deployment():
+        # Use connection pooling for Azure (production)
+        logger.info(f"Creating PGVector engine for Azure with connection pooling: {pool_settings}")
+        engine = create_engine(
+            settings.pgvector_url,
+            poolclass=QueuePool,
+            pool_size=pool_settings["pool_size"],
+            max_overflow=pool_settings["max_overflow"],
+            pool_timeout=pool_settings["pool_timeout"],
+            pool_recycle=pool_settings["pool_recycle"],
+            pool_pre_ping=pool_settings["pool_pre_ping"],
+            echo=False,
+            connect_args={
+                "connect_timeout": 10,
+                "options": "-c statement_timeout=30000"  # 30 second query timeout
+            }
+        )
+    else:
+        # Use NullPool for local development
+        logger.info("Creating PGVector engine for local development (NullPool)")
+        engine = create_engine(
+            settings.pgvector_url,
+            poolclass=NullPool,
+            echo=False
+        )
+
+    return engine
+
+
 # PostgreSQL engine for document metadata
-postgres_engine = create_engine(
-    settings.postgres_url,
-    poolclass=NullPool,
-    echo=False
-)
+postgres_engine = _create_postgres_engine()
 
 # PGVector engine for embeddings
-pgvector_engine = create_engine(
-    settings.pgvector_url,
-    poolclass=NullPool,
-    echo=False
-)
+pgvector_engine = _create_pgvector_engine()
 
 # Session makers
 PostgresSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=postgres_engine)

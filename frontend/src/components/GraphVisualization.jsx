@@ -3,7 +3,7 @@ import * as d3 from 'd3';
 import { ZoomIn, ZoomOut, Maximize2, Search, Minimize2 } from 'lucide-react';
 import axios from 'axios';
 
-const API_URL = 'http://localhost:8000';
+const API_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
 
 const GraphVisualization = ({ refreshTrigger = 0 }) => {
   const [nodes, setNodes] = useState([]);

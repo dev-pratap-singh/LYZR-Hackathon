@@ -1,10 +1,19 @@
 from pydantic_settings import BaseSettings
 from pydantic import ConfigDict
 from typing import Optional
+import urllib.parse
 
 
 class Settings(BaseSettings):
     model_config = ConfigDict(extra='ignore', env_file='.env', case_sensitive=False)
+
+    # Deployment Environment
+    deployment_environment: str = "local"  # Options: local, azure, production
+
+    # Azure Configuration
+    azure_subscription_id: Optional[str] = None
+    azure_resource_group: Optional[str] = None
+    azure_location: str = "eastus"
 
     # Database - Defaults provided for testing
     postgres_user: str = "test_user"
@@ -12,16 +21,24 @@ class Settings(BaseSettings):
     postgres_db: str = "rag_database"
     postgres_host: str = "postgres"
     postgres_port: int = 5432
+    postgres_ssl_mode: str = "prefer"  # Options: disable, prefer, require (Azure requires 'require')
+    postgres_ssl_root_cert: Optional[str] = None  # Path to SSL root certificate for Azure
 
     # PGVector Database
     pgvector_host: str = "pgvector"
     pgvector_port: int = 5432
     pgvector_db: str = "vector_db"
+    pgvector_user: Optional[str] = None  # Defaults to postgres_user if not set
+    pgvector_password: Optional[str] = None  # Defaults to postgres_password if not set
+    pgvector_ssl_mode: str = "prefer"
+    pgvector_ssl_root_cert: Optional[str] = None
 
     # Neo4j - Default auth provided for testing
     neo4j_host: str = "neo4j"
     neo4j_port: int = 7687
     neo4j_auth: str = "neo4j/test_password"  # Format: username/password
+    neo4j_protocol: str = "bolt"  # Options: bolt, bolt+s (Azure/AuraDB uses bolt+s)
+    neo4j_encrypted: bool = False  # Set to True for Azure/AuraDB
 
     # OpenAI
     openai_api_key: Optional[str] = None
@@ -80,6 +97,15 @@ class Settings(BaseSettings):
     # Redis Configuration
     redis_host: str = "redis"
     redis_port: int = 6379
+    redis_password: Optional[str] = None  # Required for Azure Cache for Redis
+    redis_ssl: bool = False  # Set to True for Azure Cache for Redis
+    redis_ssl_cert_reqs: str = "required"  # Options: none, optional, required
+
+    # Azure Cache for Redis specific
+    redis_access_key: Optional[str] = None  # Primary or secondary access key from Azure
+
+    # CORS Configuration
+    cors_origins: str = "http://localhost:3000,http://localhost:8000,http://127.0.0.1:3000"  # Comma-separated list
 
     @property
     def elasticsearch_url(self) -> str:
@@ -87,15 +113,55 @@ class Settings(BaseSettings):
 
     @property
     def postgres_url(self) -> str:
-        return f"postgresql://{self.postgres_user}:{self.postgres_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+        """
+        Generate PostgreSQL connection string with SSL support for Azure
+        """
+        # URL encode password to handle special characters
+        encoded_password = urllib.parse.quote_plus(self.postgres_password)
+
+        base_url = f"postgresql://{self.postgres_user}:{encoded_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+
+        # Add SSL parameters for Azure
+        if self.postgres_ssl_mode != "disable":
+            ssl_params = f"?sslmode={self.postgres_ssl_mode}"
+            if self.postgres_ssl_root_cert:
+                ssl_params += f"&sslrootcert={self.postgres_ssl_root_cert}"
+            base_url += ssl_params
+
+        return base_url
 
     @property
     def pgvector_url(self) -> str:
-        return f"postgresql://{self.postgres_user}:{self.postgres_password}@{self.pgvector_host}:{self.pgvector_port}/{self.pgvector_db}"
+        """
+        Generate PGVector PostgreSQL connection string with SSL support for Azure
+        """
+        # Use separate credentials for pgvector if provided, otherwise use main postgres credentials
+        pgvector_user = self.pgvector_user or self.postgres_user
+        pgvector_password = self.pgvector_password or self.postgres_password
+
+        # URL encode password to handle special characters
+        encoded_password = urllib.parse.quote_plus(pgvector_password)
+
+        base_url = f"postgresql://{pgvector_user}:{encoded_password}@{self.pgvector_host}:{self.pgvector_port}/{self.pgvector_db}"
+
+        # Add SSL parameters for Azure
+        if self.pgvector_ssl_mode != "disable":
+            ssl_params = f"?sslmode={self.pgvector_ssl_mode}"
+            if self.pgvector_ssl_root_cert:
+                ssl_params += f"&sslrootcert={self.pgvector_ssl_root_cert}"
+            base_url += ssl_params
+
+        return base_url
 
     @property
     def neo4j_uri(self) -> str:
-        return f"bolt://{self.neo4j_host}:{self.neo4j_port}"
+        """
+        Generate Neo4j connection URI with support for encrypted connections (Azure/AuraDB)
+        """
+        protocol = self.neo4j_protocol
+        if self.neo4j_encrypted and not protocol.endswith("+s"):
+            protocol = f"{protocol}+s"
+        return f"{protocol}://{self.neo4j_host}:{self.neo4j_port}"
 
     @property
     def neo4j_username(self) -> str:
@@ -107,7 +173,80 @@ class Settings(BaseSettings):
 
     @property
     def memory_db_url(self) -> str:
-        return f"postgresql://{self.memory_db_user}:{self.memory_db_password}@{self.memory_db_host}:{self.memory_db_port}/{self.memory_db_name}"
+        """
+        Generate memory database connection string (uses same postgres instance)
+        """
+        # URL encode password to handle special characters
+        encoded_password = urllib.parse.quote_plus(self.memory_db_password)
+
+        base_url = f"postgresql://{self.memory_db_user}:{encoded_password}@{self.memory_db_host}:{self.memory_db_port}/{self.memory_db_name}"
+
+        # Add SSL parameters for Azure (use same SSL settings as main postgres)
+        if self.postgres_ssl_mode != "disable":
+            ssl_params = f"?sslmode={self.postgres_ssl_mode}"
+            if self.postgres_ssl_root_cert:
+                ssl_params += f"&sslrootcert={self.postgres_ssl_root_cert}"
+            base_url += ssl_params
+
+        return base_url
+
+    @property
+    def redis_url(self) -> str:
+        """
+        Generate Redis connection URL with support for Azure Cache for Redis
+        """
+        # Use redis_access_key if provided (Azure), otherwise use redis_password
+        password = self.redis_access_key or self.redis_password
+
+        if password:
+            # URL encode password to handle special characters
+            encoded_password = urllib.parse.quote_plus(password)
+            if self.redis_ssl:
+                return f"rediss://:{encoded_password}@{self.redis_host}:{self.redis_port}/0?ssl_cert_reqs={self.redis_ssl_cert_reqs}"
+            else:
+                return f"redis://:{encoded_password}@{self.redis_host}:{self.redis_port}/0"
+        else:
+            # No password (local development)
+            if self.redis_ssl:
+                return f"rediss://{self.redis_host}:{self.redis_port}/0"
+            else:
+                return f"redis://{self.redis_host}:{self.redis_port}/0"
+
+    def is_azure_deployment(self) -> bool:
+        """Check if running in Azure environment"""
+        return self.deployment_environment in ["azure", "production"]
+
+    @property
+    def cors_allowed_origins(self) -> list[str]:
+        """
+        Parse CORS origins from comma-separated string
+        Returns a list of allowed origins for CORS configuration
+        """
+        if not self.cors_origins:
+            return ["http://localhost:3000"]
+        return [origin.strip() for origin in self.cors_origins.split(',') if origin.strip()]
+
+    def get_database_connection_pool_settings(self) -> dict:
+        """
+        Get database connection pool settings optimized for deployment environment
+        """
+        if self.is_azure_deployment():
+            return {
+                "pool_size": 20,
+                "max_overflow": 10,
+                "pool_timeout": 30,
+                "pool_recycle": 3600,  # Recycle connections every hour
+                "pool_pre_ping": True,  # Verify connections before using
+            }
+        else:
+            # Local development settings
+            return {
+                "pool_size": 5,
+                "max_overflow": 5,
+                "pool_timeout": 30,
+                "pool_recycle": 3600,
+                "pool_pre_ping": True,
+            }
 
 
 settings = Settings()

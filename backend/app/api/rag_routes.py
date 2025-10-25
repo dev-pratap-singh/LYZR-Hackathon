@@ -563,6 +563,19 @@ async def get_graph_data(
         Graph data in D3.js compatible format with nodes and edges
     """
     try:
+        # Check if graph search is enabled
+        if not settings.enable_graph_search:
+            return {
+                "nodes": [],
+                "edges": [],
+                "stats": {
+                    "node_count": 0,
+                    "edge_count": 0,
+                    "total_entities": 0,
+                    "total_relationships": 0
+                },
+                "message": "Graph search is currently disabled"
+            }
         # Query to get entities (nodes) with their properties from ALL documents
         nodes_cypher = """
         MATCH (e:__Entity__)-[:BELONGS_TO]->(d:__Document__)

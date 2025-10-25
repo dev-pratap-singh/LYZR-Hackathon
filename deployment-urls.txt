@@ -1,0 +1,44 @@
+RAG System - Azure Deployment
+================================
+
+Deployment Time: 2025-10-24 06:08 UTC
+
+Application URLs:
+-----------------
+Frontend:  https://rag-frontend.purpledesert-cefd71e5.eastus.azurecontainerapps.io
+Backend:   https://rag-backend.purpledesert-cefd71e5.eastus.azurecontainerapps.io
+
+CORS Configuration:
+------------------
+Allowed Origins: https://rag-frontend.purpledesert-cefd71e5.eastus.azurecontainerapps.io,http://localhost:3000,http://localhost:8000
+
+Features Enabled:
+-----------------
+✓ Vector Search (PGVector)
+✓ Memory Management
+✓ PDF Document Processing
+✓ Streaming Responses
+✓ Automatic CORS
+
+Features Disabled:
+-----------------
+✗ Graph Search (Neo4j)
+✗ Elasticsearch Filter Search
+
+Azure Resources:
+----------------
+Resource Group: rag-dev-rg
+Location: eastus
+Container Registry: ragdevacrfxbt87w3.azurecr.io
+
+Deployment Method:
+------------------
+Infrastructure: Bicep (azure/deploy-apps.bicep)
+Images: Docker (linux/amd64)
+
+Next Steps:
+-----------
+1. Open the frontend URL in your browser
+2. Upload a PDF document
+3. Ask questions about the document
+4. Use "vector" search for best results

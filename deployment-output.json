@@ -1,0 +1,211 @@
+{
+  "id": "/subscriptions/3f104cb4-b438-4511-844a-086700b6740a/resourceGroups/rag-dev-rg/providers/Microsoft.Resources/deployments/rag-deployment-20251024-113721",
+  "location": null,
+  "name": "rag-deployment-20251024-113721",
+  "properties": {
+    "correlationId": "3c10f577-5706-4a6f-90c1-8a963c0d3439",
+    "debugSetting": null,
+    "dependencies": [
+      {
+        "dependsOn": [
+          {
+            "apiVersion": "2023-05-01",
+            "id": "/subscriptions/3f104cb4-b438-4511-844a-086700b6740a/resourceGroups/rag-dev-rg/providers/Microsoft.App/managedEnvironments/rag-dev-env",
+            "resourceGroup": "rag-dev-rg",
+            "resourceName": "rag-dev-env",
+            "resourceType": "Microsoft.App/managedEnvironments"
+          },
+          {
+            "apiVersion": "2023-07-01",
+            "id": "/subscriptions/3f104cb4-b438-4511-844a-086700b6740a/resourceGroups/rag-dev-rg/providers/Microsoft.ContainerRegistry/registries/ragdevacrfxbt87w3",
+            "resourceGroup": "rag-dev-rg",
+            "resourceName": "ragdevacrfxbt87w3",
+            "resourceType": "Microsoft.ContainerRegistry/registries"
+          },
+          {
+            "actionName": "listCredentials",
+            "apiVersion": "2023-07-01",
+            "id": "/subscriptions/3f104cb4-b438-4511-844a-086700b6740a/resourceGroups/rag-dev-rg/providers/Microsoft.ContainerRegistry/registries/ragdevacrfxbt87w3",
+            "resourceGroup": "rag-dev-rg",
+            "resourceName": "ragdevacrfxbt87w3",
+            "resourceType": "Microsoft.ContainerRegistry/registries"
+          },
+          {
+            "actionName": "listKeys",
+            "apiVersion": "2023-08-01",
+            "id": "/subscriptions/3f104cb4-b438-4511-844a-086700b6740a/resourceGroups/rag-dev-rg/providers/Microsoft.Cache/redis/rag-dev-redis",
+            "resourceGroup": "rag-dev-rg",
+            "resourceName": "rag-dev-redis",
+            "resourceType": "Microsoft.Cache/redis"
+          },
+          {
+            "apiVersion": "2023-03-01-preview",
+            "id": "/subscriptions/3f104cb4-b438-4511-844a-086700b6740a/resourceGroups/rag-dev-rg/providers/Microsoft.DBforPostgreSQL/flexibleServers/rag-dev-postgres",
+            "resourceGroup": "rag-dev-rg",
+            "resourceName": "rag-dev-postgres",
+            "resourceType": "Microsoft.DBforPostgreSQL/flexibleServers"
+          },
+          {
+            "apiVersion": "2023-03-01-preview",
+            "id": "/subscriptions/3f104cb4-b438-4511-844a-086700b6740a/resourceGroups/rag-dev-rg/providers/Microsoft.DBforPostgreSQL/flexibleServers/rag-dev-pgvector",
+            "resourceGroup": "rag-dev-rg",
+            "resourceName": "rag-dev-pgvector",
+            "resourceType": "Microsoft.DBforPostgreSQL/flexibleServers"
+          },
+          {
+            "apiVersion": "2023-08-01",
+            "id": "/subscriptions/3f104cb4-b438-4511-844a-086700b6740a/resourceGroups/rag-dev-rg/providers/Microsoft.Cache/redis/rag-dev-redis",
+            "resourceGroup": "rag-dev-rg",
+            "resourceName": "rag-dev-redis",
+            "resourceType": "Microsoft.Cache/redis"
+          }
+        ],
+        "id": "/subscriptions/3f104cb4-b438-4511-844a-086700b6740a/resourceGroups/rag-dev-rg/providers/Microsoft.App/containerApps/rag-backend",
+        "resourceGroup": "rag-dev-rg",
+        "resourceName": "rag-backend",
+        "resourceType": "Microsoft.App/containerApps"
+      },
+      {
+        "dependsOn": [
+          {
+            "id": "/subscriptions/3f104cb4-b438-4511-844a-086700b6740a/resourceGroups/rag-dev-rg/providers/Microsoft.App/containerApps/rag-backend",
+            "resourceGroup": "rag-dev-rg",
+            "resourceName": "rag-backend",
+            "resourceType": "Microsoft.App/containerApps"
+          },
+          {
+            "apiVersion": "2023-07-01",
+            "id": "/subscriptions/3f104cb4-b438-4511-844a-086700b6740a/resourceGroups/rag-dev-rg/providers/Microsoft.ContainerRegistry/registries/ragdevacrfxbt87w3",
+            "resourceGroup": "rag-dev-rg",
+            "resourceName": "ragdevacrfxbt87w3",
+            "resourceType": "Microsoft.ContainerRegistry/registries"
+          },
+          {
+            "actionName": "listCredentials",
+            "apiVersion": "2023-07-01",
+            "id": "/subscriptions/3f104cb4-b438-4511-844a-086700b6740a/resourceGroups/rag-dev-rg/providers/Microsoft.ContainerRegistry/registries/ragdevacrfxbt87w3",
+            "resourceGroup": "rag-dev-rg",
+            "resourceName": "ragdevacrfxbt87w3",
+            "resourceType": "Microsoft.ContainerRegistry/registries"
+          },
+          {
+            "apiVersion": "2023-05-01",
+            "id": "/subscriptions/3f104cb4-b438-4511-844a-086700b6740a/resourceGroups/rag-dev-rg/providers/Microsoft.App/containerApps/rag-backend",
+            "resourceGroup": "rag-dev-rg",
+            "resourceName": "rag-backend",
+            "resourceType": "Microsoft.App/containerApps"
+          }
+        ],
+        "id": "/subscriptions/3f104cb4-b438-4511-844a-086700b6740a/resourceGroups/rag-dev-rg/providers/Microsoft.App/containerApps/rag-frontend",
+        "resourceGroup": "rag-dev-rg",
+        "resourceName": "rag-frontend",
+        "resourceType": "Microsoft.App/containerApps"
+      }
+    ],
+    "diagnostics": null,
+    "duration": "PT33.178786S",
+    "error": null,
+    "extensions": null,
+    "mode": "Incremental",
+    "onErrorDeployment": null,
+    "outputResources": [
+      {
+        "apiVersion": null,
+        "extension": null,
+        "id": "/subscriptions/3f104cb4-b438-4511-844a-086700b6740a/resourceGroups/rag-dev-rg/providers/Microsoft.App/containerApps/rag-backend",
+        "identifiers": null,
+        "resourceGroup": "rag-dev-rg",
+        "resourceType": null
+      },
+      {
+        "apiVersion": null,
+        "extension": null,
+        "id": "/subscriptions/3f104cb4-b438-4511-844a-086700b6740a/resourceGroups/rag-dev-rg/providers/Microsoft.App/containerApps/rag-frontend",
+        "identifiers": null,
+        "resourceGroup": "rag-dev-rg",
+        "resourceType": null
+      }
+    ],
+    "outputs": {
+      "backendFqdn": {
+        "type": "String",
+        "value": "rag-backend.purpledesert-cefd71e5.eastus.azurecontainerapps.io"
+      },
+      "backendUrl": {
+        "type": "String",
+        "value": "https://rag-backend.purpledesert-cefd71e5.eastus.azurecontainerapps.io"
+      },
+      "corsOrigins": {
+        "type": "String",
+        "value": "https://rag-frontend.purpledesert-cefd71e5.eastus.azurecontainerapps.io,http://localhost:3000,http://localhost:8000"
+      },
+      "frontendFqdn": {
+        "type": "String",
+        "value": "rag-frontend.purpledesert-cefd71e5.eastus.azurecontainerapps.io"
+      },
+      "frontendUrl": {
+        "type": "String",
+        "value": "https://rag-frontend.purpledesert-cefd71e5.eastus.azurecontainerapps.io"
+      }
+    },
+    "parameters": {
+      "backendImage": {
+        "type": "String",
+        "value": "ragdevacrfxbt87w3.azurecr.io/rag-backend:latest"
+      },
+      "environment": {
+        "type": "String",
+        "value": "dev"
+      },
+      "frontendImage": {
+        "type": "String",
+        "value": "ragdevacrfxbt87w3.azurecr.io/rag-frontend:latest"
+      },
+      "location": {
+        "type": "String",
+        "value": "eastus"
+      },
+      "openAIApiKey": {
+        "type": "SecureString"
+      },
+      "postgresAdminPassword": {
+        "type": "SecureString"
+      }
+    },
+    "parametersLink": null,
+    "providers": [
+      {
+        "id": null,
+        "namespace": "Microsoft.App",
+        "providerAuthorizationConsentState": null,
+        "registrationPolicy": null,
+        "registrationState": null,
+        "resourceTypes": [
+          {
+            "aliases": null,
+            "apiProfiles": null,
+            "apiVersions": null,
+            "capabilities": null,
+            "defaultApiVersion": null,
+            "locationMappings": null,
+            "locations": [
+              "eastus"
+            ],
+            "properties": null,
+            "resourceType": "containerApps",
+            "zoneMappings": null
+          }
+        ]
+      }
+    ],
+    "provisioningState": "Succeeded",
+    "templateHash": "277847844892973194",
+    "templateLink": null,
+    "timestamp": "2025-10-24T06:07:59.036783+00:00",
+    "validatedResources": null,
+    "validationLevel": null
+  },
+  "resourceGroup": "rag-dev-rg",
+  "tags": null,
+  "type": "Microsoft.Resources/deployments"
+}

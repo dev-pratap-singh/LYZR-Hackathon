@@ -7,7 +7,7 @@ import GraphVisualization from './components/GraphVisualization';
 import SettingsModal from './components/SettingsModal';
 import { loadApiKey } from './utils/encryption';
 
-const API_URL = 'http://localhost:8000';
+const API_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
 
 function App() {
   // State management
